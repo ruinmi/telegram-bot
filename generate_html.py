@@ -56,7 +56,7 @@ def parse_messages(id, raw_messages, tz):
         raw_data = raw_message.get("raw", None)
         FROM_ID = raw_data.get("FromID", None) if raw_data is not None else None
         user_id = FROM_ID.get('UserID', None) if FROM_ID is not None else None
-        user = '对方' if user_id is None else '我'
+        user = '陈勇军' if user_id is None else '我'
         messages.append({'date': date, 'timestamp': timestamp, 'msg_id': msg_id, 
                          'msg_file_name': msg_file_name, 'user': user, 'msg': msg_text, 
                          'display_height': display_height, 'display_width': display_width})
@@ -73,7 +73,27 @@ def generate_html(messages):
         <link rel="icon" href="favicon.svg" type="image/svg+xml">
         <title>聊天记录</title>
         <style>
-            body {{  font-size: 16px; font-family: Arial, sans-serif; background-color: #000; color: #333; margin: 0; display: flex; justify-content: center; background-image: url('bg.png')}}
+            @font-face {{
+                font-family: 'Apple Color Emoji';
+                src: url('fonts/AppleColorEmoji.ttf') format('truetype');
+                font-weight: normal;
+                font-style: normal;
+            }}
+            @font-face {{
+                font-family: 'Roboto';
+                src: url('fonts/Roboto-Regular.ttf') format('truetype');
+                font-weight: normal;
+                font-style: normal;
+            }}
+            body {{  
+                font-size: 16px;
+                font-family: "Roboto", "Apple Color Emoji", sans-serif;
+                background-color: #000;
+                color: #333; margin: 0;
+                display: flex;
+                justify-content: center;
+                background-image: url('bg.png')
+            }}
             .container {{ max-width: 1000px; width: 100%; }}
             #header {{ position: fixed; display: flex; align-items: center; background: #000; z-index: 1; width: 100%; padding: 10px 0 7px; }}
             #searchBox {{ padding: 10px; width: 300px; outline: none; background: #000; border: 1px solid #ffffff38; color: white; border-radius: .9375rem; }}
@@ -360,8 +380,12 @@ def main():
 
     id = sys.argv[1]
     no_export = len(sys.argv) == 3 and sys.argv[2] == "--ne"
-    messages_file = f'{id}_chat.json'
-    messages_file_temp = f'{id}_chat_temp.json'
+    # 获取脚本所在的目录
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+
+    
+    messages_file = os.path.join(script_dir, f'{id}_chat.json')
+    messages_file_temp = os.path.join(script_dir, f'{id}_chat_temp.json')
 
     if not no_export:
         export_chat(id, messages_file, messages_file_temp)
@@ -371,7 +395,7 @@ def main():
     raw_messages = data["messages"]
     messages = parse_messages(id, raw_messages, china_timezone)
     html_content = generate_html(messages)
-    save_html(html_content)
+    save_html(html_content, os.path.join(script_dir, "chat_log.html"))
 
 if __name__ == "__main__":
     main()
