@@ -71,14 +71,9 @@ def generate_html(messages):
     <head>
         <meta charset="utf-8">
         <link rel="icon" href="favicon.svg" type="image/svg+xml">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
         <title>聊天记录</title>
         <style>
-            @font-face {{
-                font-family: 'Apple Color Emoji';
-                src: url('fonts/AppleColorEmoji.ttf') format('truetype');
-                font-weight: normal;
-                font-style: normal;
-            }}
             @font-face {{
                 font-family: 'Roboto';
                 src: url('fonts/Roboto-Regular.ttf') format('truetype');
@@ -92,8 +87,26 @@ def generate_html(messages):
                 color: #333; margin: 0;
                 display: flex;
                 justify-content: center;
-                background-image: url('bg.png')
+                background-image: url('bg.png');
+                overscroll-behavior: contain;
             }}
+            @media screen and (max-width: 768px) {{
+                body {{ font-size: 20px; }}
+                body #header {{ justify-content: center; }}
+                body #searchBox {{ font-size: 14px; width: 250px }}
+                body #confirmSearch {{ 
+                    height: 38px;
+                    width: 68px;
+                    font-size: 14px;
+                    line-height: 38px; 
+                }}
+                body .date {{
+                    font-size: 14px;
+                    bottom: -23px;
+                }}
+
+            }}
+
             .container {{ max-width: 1000px; width: 100%; }}
             #header {{ position: fixed; display: flex; align-items: center; background: #000; z-index: 1; width: 100%; padding: 10px 0 7px; }}
             #searchBox {{ padding: 10px; width: 300px; outline: none; background: #000; border: 1px solid #ffffff38; color: white; border-radius: .9375rem; }}
@@ -116,14 +129,16 @@ def generate_html(messages):
             .image {{ width: 100%; display: flex; justify-content: center; }}
             .video video {{ max-width: 100%; border-radius: .9375rem; }}
             .image img {{ border-radius: .9375rem; }}
+            .download {{
+                padding: .3125rem .5rem .375rem;
+            }}
             .download a {{
+                overflow: hidden;
+                width: 100%;
+                white-space: nowrap;
+                text-overflow: ellipsis;
                 display: inline-block;
-                padding: 8px 12px;
-                background-color: #212121;
                 color: #fff;
-                border: none;
-                border-radius: 5px;
-                text-decoration: none;
             }}
             .separator {{
                 clear: both;
@@ -273,42 +288,61 @@ def generate_html(messages):
 
             // 渲染指定区间内的消息，prepend=true 时将消息插入到最前面
             function renderMessagesRange(start, end, prepend=false) {{
-                let html = "";
-                for (let i = start; i < end; i++) {{
-                    html += createMessageHtml(allMessages[i], i);
-                }}
-                if (prepend) {{
-                    messagesContainer.insertAdjacentHTML('afterbegin', html);
-                }} else {{
-                    messagesContainer.innerHTML += html;
-                }}
+                return new Promise((resolve) => {{
+                    let html = "";
+                    for (let i = start; i < end; i++) {{
+                        html += createMessageHtml(allMessages[i], i);
+                    }}
+                    if (prepend) {{
+                        messagesContainer.insertAdjacentHTML('afterbegin', html);
+                    }} else {{
+                        messagesContainer.innerHTML += html;
+                    }}
+                    resolve();
+                }});
             }}
 
             // 初始加载最新的20条消息
             function loadInitialMessages() {{
                 let total = allMessages.length;
                 currentStartIndex = Math.max(0, total - 20);
-                renderMessagesRange(currentStartIndex, total);
-                // 延迟 100 毫秒后再滚动到底部，确保 DOM 和媒体内容都已加载
-                setTimeout(function(){{
+                renderMessagesRange(currentStartIndex, total).then(() => {{
                     window.scrollTo(0, document.body.scrollHeight);
-                }}, 100);
+                }});
             }}
 
             // 向上加载更多消息（每次加载20条）
-            function loadOlderMessages() {{
+            async function loadOlderMessages() {{
                 if (currentStartIndex <= 0) return;
                 let newStart = Math.max(0, currentStartIndex - 20);
-                renderMessagesRange(newStart, currentStartIndex, true);
+                await renderMessagesRange(newStart, currentStartIndex, true)
                 currentStartIndex = newStart;
             }}
 
+            function loadOlderMessagesWithScrollAdjustment() {{
+                // 记录加载前页面的高度和滚动位置
+                const prevHeight = document.body.scrollHeight;
+                const prevScrollY = window.scrollY;
+                loadOlderMessages().then(() => {{
+                    // 加载完新内容后，计算新增内容的高度
+                    const newHeight = document.body.scrollHeight;
+                    const deltaHeight = newHeight - prevHeight;
+                    // 调整滚动位置，让用户看到原本的位置
+                    window.scrollTo(0, prevScrollY + deltaHeight);
+                }});
+            }}
+
             // 当非搜索模式下，滚动到页面顶部时触发加载更多
-            window.addEventListener('scroll', function() {{
-                if (!isSearching && window.scrollY < 50 && currentStartIndex > 0) {{
-                    loadOlderMessages();
-                }}
-            }});
+            let debounceTimer;
+            function checkScroll() {{
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(function() {{
+                    if (!isSearching && window.scrollY < 50 && currentStartIndex > 0) {{
+                        loadOlderMessagesWithScrollAdjustment();
+                    }}
+                }}, 100);
+            }}
+            window.addEventListener('scroll', checkScroll);
 
             // 搜索函数，利用 DocumentFragment 组装 DOM，非连续组之间插入分隔符
             function searchMessages() {{ 
