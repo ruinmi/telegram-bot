@@ -8,10 +8,10 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 log_file = os.path.join(script_dir, "update_messages.log")
 logging.basicConfig(filename=log_file, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
-def export_chat(their_id, messages_file, messages_file_temp):
+def export_chat(their_id, messages_file, messages_file_temp, download_files=True, all_messages=True, raw_messages=True):
     logging.info("Starting chat export...")
     # Load the last export time if it exists
-    last_export_time_file = os.path.join(script_dir, 'last_export_time')
+    last_export_time_file = os.path.join(script_dir, 'data', their_id, f'{their_id}-last_export_time')
     if os.path.exists(last_export_time_file):
         with open(last_export_time_file, 'r') as file:
             last_export_time = file.read().strip()
@@ -23,12 +23,12 @@ def export_chat(their_id, messages_file, messages_file_temp):
     command = [
         'tdl', 'chat', 'export',
         '-c', str(their_id),
-        '--raw',
-        '--all',
         '--with-content',
         '-o', messages_file_temp,
         '-i', f'{last_export_time},{current_time}'
     ]
+    command.append('--raw' if raw_messages else '')
+    command.append('--all' if all_messages else '')
 
     logging.info(f"Running command: {' '.join(command)}")
     
@@ -38,12 +38,17 @@ def export_chat(their_id, messages_file, messages_file_temp):
         logging.info("Chat export successful.")
         
         # New: Download chat files using tdl dl command
-        download_command = ['tdl', 'dl', '-f', messages_file_temp]
-        download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
-        if download_result.returncode != 0:
-            logging.error(f"Error downloading files: {download_result.stderr}")
-        else:
-            logging.info("Download successful.")
+        if download_files:
+            logging.info("Downloading files...")
+            download_path = os.path.join(script_dir, 'downloads', their_id)
+            if not os.path.exists(download_path):
+                os.makedirs(download_path)
+            download_command = ['tdl', 'dl', '-f', messages_file_temp, '-d', download_path, '--skip-same', '-t', '2', '-l', '2']
+            download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
+            if download_result.returncode != 0:
+                logging.error(f"Error downloading files: {download_result.stderr}")
+            else:
+                logging.info("Download successful.")
         
         # Load existing messages if the file exists
         if os.path.exists(messages_file):
