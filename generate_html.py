@@ -307,8 +307,31 @@ def generate_html(messages):
                 let total = allMessages.length;
                 currentStartIndex = Math.max(0, total - 20);
                 renderMessagesRange(currentStartIndex, total).then(() => {{
-                    window.scrollTo(0, document.body.scrollHeight);
+                    waitForMediaToLoad().then(() => {{
+                        window.scrollTo(0, document.body.scrollHeight);
+                    }});
                 }});
+            }}
+
+            function waitForMediaToLoad() {{
+                // 获取所有图片和视频
+                const images = Array.from(document.images).map(img => {{
+                    if (img.complete) return Promise.resolve();
+                    return new Promise(resolve => {{
+                        img.addEventListener('load', resolve, {{ once: true }});
+                        img.addEventListener('error', resolve, {{ once: true }});
+                    }});
+                }});
+
+                const videos = Array.from(document.querySelectorAll('video')).map(video => {{
+                    // readyState >= 3 表示可以播放（已加载足够数据）
+                    if (video.readyState >= 3) return Promise.resolve();
+                    return new Promise(resolve => {{
+                        video.addEventListener('loadeddata', resolve, {{ once: true }});
+                        video.addEventListener('error', resolve, {{ once: true }});
+                    }});
+                }});
+                return Promise.all([...images, ...videos]);
             }}
 
             // 向上加载更多消息（每次加载20条）
@@ -340,7 +363,7 @@ def generate_html(messages):
                     if (!isSearching && window.scrollY < 50 && currentStartIndex > 0) {{
                         loadOlderMessagesWithScrollAdjustment();
                     }}
-                }}, 100);
+                }}, 200);
             }}
             window.addEventListener('scroll', checkScroll);
 
