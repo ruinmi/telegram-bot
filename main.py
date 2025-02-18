@@ -4,6 +4,7 @@ import sys
 from update_messages import export_chat
 from PIL import Image
 import os
+import re
 
 def get_image_size(image_path):
     with Image.open(image_path) as img:
@@ -43,13 +44,17 @@ def load_json(file_path):
 def convert_timestamp_to_date(timestamp, tz):
     return datetime.fromtimestamp(timestamp, tz).strftime('%Y-%m-%d %H:%M:%S')
 
-def parse_messages(id, raw_messages, tz):
+def parse_messages(id, raw_messages, tz, script_dir):
     messages = []
     for raw_message in raw_messages:
         msg_text = raw_message.get("text", "")
+        msg_text = re.sub(r'(https?://\S+)', r'<a href="\1" target="_blank">\1</a>', msg_text)
+        msg_text = msg_text.replace("\n", "<br/>")
         msg_id = raw_message.get("id", None)
         msg_file = raw_message.get("file", "")
         msg_file_name = f'downloads/{id}/{id}_{msg_id}_{msg_file}' if msg_file != "" else ""
+        if msg_file_name != "" and not os.path.exists(os.path.join(script_dir, msg_file_name)):
+            msg_file_name = ""
         display_width, display_height = calculate_telegram_image_display(msg_file_name)
         timestamp = raw_message.get("date", 0)
         date = convert_timestamp_to_date(timestamp, tz)
@@ -119,6 +124,15 @@ def generate_html(messages):
             .date.left {{ left: 0; }}
             .user {{ display: none; font-weight: bold; margin-bottom: 5px; }}
             .msg {{ padding: .3125rem .5rem .375rem; }}
+            .msg a {{ color: #8774e1; text-decoration: none; }}
+            .msg a:hover {{ text-decoration: underline; }}
+            .msg .highlight {{ 
+                background-color: #cae3f7;
+                border-radius: 5px;
+                padding: 2px;
+                color: #000;
+            }}
+            .message.right .msg a {{ color: #fff; }}
             .hidden {{ display: none !important; }}
             .message.left.context {{ background-color: #21212199; color: #9b9b9b; }}
             .message.right.context {{ background-color: rgb(118,106,200,0.6); color: #9b9b9b; }}
@@ -176,14 +190,19 @@ def generate_html(messages):
             let currentStartIndex;
             let isSearching = false;
             const messagesContainer = document.getElementById('messages');
-
+            function highlightText(text, searchValue) {{
+                if (!searchValue) return text;
+                // 创建正则表达式，'gi' 表示全局、不区分大小写
+                const regex = new RegExp(`(${{searchValue}})`, 'gi');
+                return text.replace(regex, '<span class="highlight">$1</span>');
+            }}
             // 根据单个消息数据生成 HTML 结构
-            function createMessageHtml(message, index) {{
+            function createMessageHtml(message, index, searchValue) {{
                 let position = message.user === '我' ? 'right' : 'left';
                 let mediaHtml = "";
                 if (message.msg_file_name) {{
                     let lowerName = message.msg_file_name.toLowerCase();
-                    if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif')) {{
+                    if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {{
                         mediaHtml = `<div class="image"><img style="max-width: 100%; max-height: ${{message.display_height}}px" src="${{message.msg_file_name}}" alt="图片" /></div>`;
                     }} else if (lowerName.endsWith('.mp4') || lowerName.endsWith('.mov') || lowerName.endsWith('.avi')) {{
                         mediaHtml = `<div class="video"><video controls><source src="${{message.msg_file_name}}" type="video/mp4">Your browser does not support the video tag.</video></div>`;
@@ -199,6 +218,7 @@ def generate_html(messages):
                             </div>`;
                     }}
                 }}
+                let messageContent = message.msg ? highlightText(message.msg, searchValue) : "";
                 return `<div class="message ${{
                     position
                 }} clearfix">
@@ -211,7 +231,7 @@ def generate_html(messages):
                             ${{
                                 mediaHtml
                             }}
-                            ${{ message.msg ? `<div class="msg">${{message.msg}}</div>` : "" }}
+                            ${{ message.msg ? `<div class="msg">${{messageContent}}</div>` : "" }}
                         </div>`;
             }}
 
@@ -405,7 +425,7 @@ def generate_html(messages):
                         fragment.appendChild(upSeparator);
                     }}
                     let tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = createMessageHtml(allMessages[idx], idx);
+                    tempDiv.innerHTML = createMessageHtml(allMessages[idx], idx, searchValue);
                     let messageElement = tempDiv.firstElementChild;
                     fragment.appendChild(messageElement);
                     lastIndex = idx;
@@ -485,7 +505,7 @@ def main():
     data = load_json(messages_file)
     china_timezone = timezone(timedelta(hours=8))
     raw_messages = data["messages"]
-    messages = parse_messages(id, raw_messages, china_timezone)
+    messages = parse_messages(id, raw_messages, china_timezone, script_dir)
     html_content = generate_html(messages)
     
     output_path = os.path.join(script_dir, output_filename)
