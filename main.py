@@ -171,7 +171,23 @@ def generate_html(messages):
                 color: #aaa;
                 font-size: 0.9rem;
             }}
-
+            /* 加载指示器样式 */
+            #loader {{
+                position: fixed;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                border: 8px solid #7373735e; /* 灰色边框 */
+                border-top: 8px solid #0089e5; /* 蓝色顶部，形成旋转效果 */
+                border-radius: 50%;
+                width: 60px;
+                height: 60px;
+                animation: spin 1s linear infinite; /* 旋转动画 */
+            }}
+            @keyframes spin {{
+                0% {{ transform: translate(-50%, -50%) rotate(0deg); }}
+                100% {{ transform: translate(-50%, -50%) rotate(360deg); }}
+            }}
         </style>
     </head>
     <body>
@@ -180,13 +196,35 @@ def generate_html(messages):
                 <input type="text" id="searchBox" placeholder="请输入日期或聊天内容进行搜索...">
                 <button id="confirmSearch" onclick="searchMessages()">搜索</button>
             </div>
+            <div id="loader"></div>
             <div id="messages"></div>
         </div>
         <button id="scrollTop" class="scroll-button" onclick="window.scrollTo(0, 0)">⬆️</button>
         <button id="scrollBottom" class="scroll-button" onclick="window.scrollTo(0, document.body.scrollHeight)">⬇️</button>
         <script>
             // 全部聊天记录数据，由 Python 端生成
-            let allMessages = {messages_json};
+            let allMessages = [];
+            const loader = document.getElementById('loader');
+            loader.classList.remove('hidden');
+            function loadMessages() {{
+                fetch('./data/{chat_id}/messages.json')
+                    .then(response => {{
+                        if (!response.ok) {{
+                            throw new Error('无法加载消息数据');
+                        }}
+                        return response.json();
+                    }})
+                    .then(data => {{
+                        allMessages = data;
+                        loadInitialMessages(); // 数据加载完成后渲染初始消息
+                    }})
+                    .catch(error => {{
+                        console.error('加载聊天记录失败:', error);
+                    }})
+                    .finally(() => {{
+                        loader.classList.add('hidden');
+                    }});
+            }}
             let currentStartIndex;
             let isSearching = false;
             const messagesContainer = document.getElementById('messages');
@@ -438,7 +476,7 @@ def generate_html(messages):
                 messagesContainer.appendChild(fragment);
             }}
 
-            document.addEventListener('DOMContentLoaded', loadInitialMessages);
+            document.addEventListener('DOMContentLoaded', loadMessages);
 
             const confirmSearchBtn = document.getElementById('confirmSearch');
             document.addEventListener('keydown', function(event) {{
@@ -450,7 +488,7 @@ def generate_html(messages):
     </body>
 </html>
     """
-    return html_content
+    return html_content.strip()
 
 def save_html(html_content, filename='chat_log.html'):
     with open(filename, 'w', encoding='utf-8') as file:
@@ -466,7 +504,8 @@ def main():
         print("参数数量错误，请使用 '--help' 查看用法说明。")
         return
 
-    id = sys.argv[1]
+    global chat_id
+    chat_id = sys.argv[1]
 
     # 参数标志解析
     no_export = "--ne" in sys.argv
@@ -486,15 +525,15 @@ def main():
 
     # 获取脚本所在的目录
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    data_dir = os.path.join(script_dir, 'data', id)
+    data_dir = os.path.join(script_dir, 'data', chat_id)
     if not os.path.exists(data_dir):
         os.makedirs(data_dir)
-    messages_file = os.path.join(data_dir, f'{id}_chat.json')
-    messages_file_temp = os.path.join(data_dir, f'{id}_chat_temp.json')
+    messages_file = os.path.join(data_dir, f'{chat_id}_chat.json')
+    messages_file_temp = os.path.join(data_dir, f'{chat_id}_chat_temp.json')
 
     if not no_export:
         export_chat(
-            id, 
+            chat_id, 
             messages_file, 
             messages_file_temp, 
             download_files=download_files, 
@@ -505,12 +544,20 @@ def main():
     data = load_json(messages_file)
     china_timezone = timezone(timedelta(hours=8))
     raw_messages = data["messages"]
-    messages = parse_messages(id, raw_messages, china_timezone, script_dir)
+    messages = parse_messages(chat_id, raw_messages, china_timezone, script_dir)
+
+     # 保存 messages 到 messages.json 文件
+    messages_json_path = os.path.join(data_dir, 'messages.json')
+    with open(messages_json_path, 'w', encoding='utf-8') as json_file:
+        json.dump(messages, json_file, ensure_ascii=False, indent=4)
+
+    # 生成 HTML 文件
     html_content = generate_html(messages)
-    
     output_path = os.path.join(script_dir, output_filename)
     save_html(html_content, output_path)
+
     print(f"Chat log saved to {output_path}")
+    print(f"Messages data saved to {messages_json_path}")
 
 
 def print_help():
