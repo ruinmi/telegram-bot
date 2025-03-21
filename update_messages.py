@@ -3,6 +3,9 @@ import subprocess
 import logging
 import time
 import json
+import uuid
+import requests
+import urllib
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 log_file = os.path.join(script_dir, "update_messages.log")
@@ -73,3 +76,22 @@ def export_chat(their_id, messages_file, messages_file_temp, download_files=True
             file.write(current_time)
     else:
         logging.error(f"Error exporting chat: {result.stderr}")
+
+def download(url, their_id):
+    download_path = os.path.join(script_dir, 'downloads', their_id)
+    if not os.path.exists(download_path):
+        os.makedirs(download_path)
+    
+
+    file_name, file_extension = os.path.splitext(os.path.basename(urllib.parse.urlparse(url).path))
+    unique_name = str(uuid.uuid4()) + file_extension
+    full_save_path = os.path.join(download_path, unique_name)
+
+    response = requests.get(url)
+    if response.status_code == 200:
+        with open(full_save_path, 'wb') as f:
+            f.write(response.content)
+        return full_save_path
+    else:
+        print("下载失败，状态码:", response.status_code)
+        return None

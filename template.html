@@ -11,6 +11,9 @@
                 font-weight: normal;
                 font-style: normal;
             }
+            html {
+                font-size: 16px;
+            }
             body {  
                 font-size: 16px;
                 font-family: "Roboto", "Apple Color Emoji", sans-serif;
@@ -21,22 +24,6 @@
                 background-image: url('resources/bg.png');
                 overscroll-behavior: contain;
             }
-            @media screen and (max-width: 768px) {
-                body { font-size: 20px; }
-                body #header { justify-content: center; }
-                body #searchBox { font-size: 14px; width: 250px }
-                body #confirmSearch { 
-                    height: 38px;
-                    width: 68px;
-                    font-size: 14px;
-                    line-height: 38px; 
-                }
-                body .date {
-                    font-size: 14px;
-                    bottom: -23px;
-                }
-            }
-
             .container { max-width: 1000px; width: 100%; }
             #header { position: fixed; display: flex; align-items: center; background: #000; z-index: 1; width: 100%; padding: 10px 0 7px; }
             #searchBox { padding: 10px; width: 300px; outline: none; background: #000; border: 1px solid #ffffff38; color: white; border-radius: .9375rem; }
@@ -113,6 +100,66 @@
                 0% { transform: translate(-50%, -50%) rotate(0deg); }
                 100% { transform: translate(-50%, -50%) rotate(360deg); }
             }
+            .og-info {
+                position: relative;
+                border-radius: .25rem;
+                cursor: pointer;
+                overflow: hidden;
+                text-decoration: none;
+                display: block;
+                margin-bottom: 15px;
+            }
+            .og-content {
+                background: rgba(64, 169, 32, .1);
+                padding: .25rem .375rem;
+                overflow: hidden;
+                padding-inline-start: calc(.375rem + 3px);
+            }
+            .og-content:before {
+                content: " ";
+                position: absolute;
+                inset-inline-start: 0;
+                top: 0;
+                bottom: 0;
+                flex: 0 0 auto;
+                width: .1875rem;
+                background: #40a920;
+                z-index: 1;
+            }
+            .og-content:hover {
+                background: rgba(64, 169, 32, .2);
+            }
+            .og-image {
+                text-align: center;
+                margin: calc(.25rem - 1px) 0;
+            }
+            .og-image img {
+                max-width: 100%;
+            }
+            .og-sitename {
+                color: rgb(64, 169, 32)
+            }
+            .og-text {
+                color: #fff;
+            }
+            @media screen and (max-width: 768px) {
+                body { font-size: 20px; }
+                body #header { justify-content: center; }
+                body #searchBox { font-size: 14px; width: 250px }
+                body #confirmSearch { 
+                    height: 38px;
+                    width: 68px;
+                    font-size: 14px;
+                    line-height: 38px; 
+                }
+                body .date {
+                    font-size: 14px;
+                    bottom: -23px;
+                }
+                .message { 
+                    max-width: 80%;
+                }
+            }
         </style>
     </head>
     <body>
@@ -156,6 +203,20 @@
             const messagesContainer = document.getElementById('messages');
             function highlightText(text, searchValue) {
                 if (!searchValue) return text;
+                // if text contains url, and searchValue is contained in url, highlight the whole url
+                if (text.includes('http')) {
+                    const urlRegex = /(https?:\/\/[^\s]+)/g;
+                    const urls = text.match(urlRegex);
+                    if (urls) {
+                        for (let url of urls) {
+                            if (url.toLowerCase().includes(searchValue)) {
+                                text = text.replace(url, `<span class="highlight">${url}</span>`);
+                            }
+                        }
+                    }
+                    return text;
+                }
+
                 // 创建正则表达式，'gi' 表示全局、不区分大小写
                 const regex = new RegExp(`(${searchValue})`, 'gi');
                 return text.replace(regex, '<span class="highlight">$1</span>');
@@ -163,7 +224,11 @@
             // 根据单个消息数据生成 HTML 结构
             function createMessageHtml(message, index, searchValue) {
                 let position = message.user === '我' ? 'right' : 'left';
+                let messageContent = message.msg ? highlightText(message.msg, searchValue) : "";
+                messageContent = messageContent.replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>');
+                messageContent = messageContent.replace(/\n/g, "<br/>");
                 let mediaHtml = "";
+                let ogHtml = "";
                 if (message.msg_file_name) {
                     let lowerName = message.msg_file_name.toLowerCase();
                     if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
@@ -181,8 +246,20 @@
                                 </a>
                             </div>`;
                     }
+                } else if (message.og_info && message.og_info.image) {
+                    ogHtml = `
+                    <a class="og-info" href="${message.og_info.url}" target="_blank">
+                        <div class="og-content">
+                            ${message.og_info.site_name ? `<div class="og-sitename">${message.og_info.site_name}</div>` : ""}
+                            ${message.og_info.description ? `<div class="og-text">${message.og_info.description}</div>` : message.og_info.title ? `<div class="og-text">${message.og_info.title}</div>` : ""}
+                            <div class="og-image">
+                                <img src="${message.og_info.image}" 
+                                    alt="${message.og_info.title || 'Open Graph Image'}" 
+                                    />
+                            </div>
+                        </div>
+                    </a>`;
                 }
-                let messageContent = message.msg ? highlightText(message.msg, searchValue) : "";
                 return `<div class="message ${
                     position
                 } clearfix">
@@ -196,6 +273,9 @@
                                 mediaHtml
                             }
                             ${ message.msg ? `<div class="msg">${messageContent}</div>` : "" }
+                            ${
+                                ogHtml
+                            }
                         </div>`;
             }
 
