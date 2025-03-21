@@ -11,24 +11,26 @@ from bs4 import BeautifulSoup
 from hashlib import md5
 from urllib.parse import urlparse
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+
 OG_DATA_FILE = 'og_data.json'
 # 加载已有的Open Graph数据
 def load_og_data():
-    if os.path.exists(OG_DATA_FILE):
-        with open(OG_DATA_FILE, 'r', encoding='utf-8') as file:
+    f = os.path.join(script_dir, OG_DATA_FILE)
+    if os.path.exists(f):
+        with open(f, 'r', encoding='utf-8') as file:
             return json.load(file)
     return {}
 
 # 保存Open Graph数据到本地
 def save_og_data(og_data):
-    with open(OG_DATA_FILE, 'w', encoding='utf-8') as file:
+    with open(os.path.join(script_dir, OG_DATA_FILE), 'w', encoding='utf-8') as file:
         json.dump(og_data, file, ensure_ascii=False, indent=4)
 
 # 根据URL生成唯一的键值
 def generate_url_key(url):
     return md5(url.encode('utf-8')).hexdigest()
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
 def get_image_size(image_path):
     with Image.open(image_path) as img:
         width, height = img.size
@@ -141,7 +143,8 @@ def get_open_graph_info(id, url, script_dir):
             og_data[url] = {}
             save_og_data(og_data)
             return None
-    except requests.RequestException:
+    except requests.RequestException as e:
+        print(f'error og:{e}')
         og_data[url] = {}
         save_og_data(og_data)
         return None
