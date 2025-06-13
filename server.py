@@ -34,16 +34,18 @@ def get_messages(chat_id):
 @app.route('/search/<chat_id>')
 def search_messages(chat_id):
     query = request.args.get('q', '').lower()
-    if not query:
-        return jsonify([])
     messages = load_messages(chat_id)
+    if not query:
+        return jsonify({'total': len(messages), 'results': []})
     result = []
-    for m in messages:
+    for idx, m in enumerate(messages):
         if (query in m.get('date', '').lower() or
                 query in (m.get('msg') or '').lower() or
                 query in m.get('msg_file_name', '').lower()):
-            result.append(m)
-    return jsonify(result)
+            item = dict(m)
+            item['index'] = idx
+            result.append(item)
+    return jsonify({'total': len(messages), 'results': result})
 
 
 if __name__ == '__main__':
