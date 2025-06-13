@@ -10,6 +10,7 @@ import requests
 from bs4 import BeautifulSoup
 from hashlib import md5
 from urllib.parse import urlparse
+import sqlite3
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -188,17 +189,64 @@ def parse_messages(id, raw_messages, tz, script_dir):
     # 按时间正序排列（旧的在前，新消息在后）
     return sorted(messages, key=lambda x: x['date'])
 
+def save_messages_to_db(db_path, chat_id, messages):
+    conn = sqlite3.connect(db_path)
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS messages(
+            chat_id TEXT,
+            msg_id INTEGER,
+            date TEXT,
+            timestamp INTEGER,
+            msg_file_name TEXT,
+            user TEXT,
+            msg TEXT,
+            display_height INTEGER,
+            display_width INTEGER,
+            og_info TEXT,
+            PRIMARY KEY(chat_id, msg_id)
+        )
+    ''')
+
+    insert_sql = '''
+        INSERT OR IGNORE INTO messages(
+            chat_id, msg_id, date, timestamp,
+            msg_file_name, user, msg,
+            display_height, display_width, og_info
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    '''
+
+    data = []
+    for m in messages:
+        og_info = json.dumps(m['og_info'], ensure_ascii=False) if m.get('og_info') else None
+        data.append((chat_id, m['msg_id'], m['date'], m['timestamp'],
+                     m['msg_file_name'], m['user'], m['msg'],
+                     m['display_height'], m['display_width'], og_info))
+
+    conn.executemany(insert_sql, data)
+    conn.commit()
+    conn.close()
+
 def main():
     # 检测是否需要显示帮助信息
     if "--help" in sys.argv or "-h" in sys.argv:
         print_help()
         return
 
-    if len(sys.argv) < 2 or len(sys.argv) > 7:
+    if len(sys.argv) < 2 or len(sys.argv) > 9:
         print("参数数量错误，请使用 '--help' 查看用法说明。")
         return
 
     chat_id = sys.argv[1]
+
+    remark = None
+    if '--remark' in sys.argv:
+        idx = sys.argv.index('--remark')
+        if idx + 1 < len(sys.argv):
+            remark = sys.argv[idx + 1]
+    elif '-r' in sys.argv:
+        idx = sys.argv.index('-r')
+        if idx + 1 < len(sys.argv):
+            remark = sys.argv[idx + 1]
 
     # 参数标志解析
     download_files = "--ndf" not in sys.argv
@@ -211,6 +259,25 @@ def main():
         os.makedirs(data_dir)
     messages_file = os.path.join(data_dir, f'{chat_id}_chat.json')
     messages_file_temp = os.path.join(data_dir, f'{chat_id}_chat_temp.json')
+    db_path = os.path.join(data_dir, 'messages.db')
+
+    # 迁移旧的 messages.json 数据
+    old_json = os.path.join(data_dir, 'messages.json')
+    if os.path.exists(old_json) and not os.path.exists(db_path):
+        try:
+            with open(old_json, 'r', encoding='utf-8') as f:
+                old_msgs = json.load(f)
+            if isinstance(old_msgs, dict):
+                old_msgs = old_msgs.get('messages', [])
+            save_messages_to_db(db_path, chat_id, old_msgs)
+            os.remove(old_json)
+        except Exception as e:
+            print(f"Failed to migrate old JSON data: {e}")
+
+    if remark:
+        info_file = os.path.join(data_dir, 'info.json')
+        with open(info_file, 'w', encoding='utf-8') as f:
+            json.dump({'remark': remark}, f, ensure_ascii=False, indent=2)
 
     export_chat(
         chat_id, 
@@ -221,15 +288,12 @@ def main():
         raw_messages=raw_messages
     )
 
-    data = load_json(messages_file)
+    data = load_json(messages_file_temp)
     china_timezone = timezone(timedelta(hours=8))
-    raw_messages = data["messages"]
+    raw_messages = data.get("messages", [])
     messages = parse_messages(chat_id, raw_messages, china_timezone, script_dir)
 
-     # 保存 messages 到 messages.json 文件
-    messages_json_path = os.path.join(data_dir, 'messages.json')
-    with open(messages_json_path, 'w', encoding='utf-8') as json_file:
-        json.dump(messages, json_file, ensure_ascii=False, separators=(',', ':'))
+    save_messages_to_db(db_path, chat_id, messages)
 
     # 删除临时文件
     if os.path.exists(messages_file_temp):
@@ -237,7 +301,7 @@ def main():
     if os.path.exists(messages_file):
         os.remove(messages_file)
         
-    print(f"Messages data saved to {messages_json_path}")
+    print(f"Messages data saved to {db_path}")
 
 
 def print_help():
@@ -251,6 +315,7 @@ def print_help():
     [--ndf]             可选，禁止下载附件文件（默认会下载）。
     [--nam]             可选，禁止导出全部消息，仅导出带包含文件的消息。
     [--nrm]             可选，禁止导出原始消息数据，使用解析后的数据。
+    [--remark NAME]     可选，为该聊天设置备注名，也可使用 -r NAME。
 
 通用选项:
     -h, --help          显示此帮助信息并退出。

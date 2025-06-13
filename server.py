@@ -2,6 +2,7 @@
 import os
 import json
 import logging
+import sqlite3
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, render_template, Response, abort
 from werkzeug.utils import safe_join
@@ -56,16 +57,13 @@ def downloads_files(filename):
         abort(404)
     return send_from_directory(os.path.join(script_dir, 'downloads'), filename)
 
-def load_messages(chat_id):
-    path = os.path.join(script_dir, 'data', chat_id, 'messages.json')
-    if not os.path.exists(path):
-        return []
-    try:
-        with open(path, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        logger.error(f"Error reading {path}: {e}")
-        return []
+def get_db(chat_id):
+    db_path = os.path.join(script_dir, 'data', chat_id, 'messages.db')
+    if not os.path.exists(db_path):
+        return None
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 @app.route('/chat/<chat_id>')
 @requires_auth
@@ -78,40 +76,86 @@ def list_chats():
     data_dir = os.path.join(script_dir, 'data')
     if not os.path.isdir(data_dir):
         return jsonify({'chats': []})
-    chats = [
-        name for name in os.listdir(data_dir)
-        if os.path.isdir(os.path.join(data_dir, name))
-    ]
+    chats = []
+    for name in os.listdir(data_dir):
+        if not os.path.isdir(os.path.join(data_dir, name)):
+            continue
+        remark = None
+        info_file = os.path.join(data_dir, name, 'info.json')
+        if os.path.exists(info_file):
+            try:
+                with open(info_file, 'r', encoding='utf-8') as f:
+                    info = json.load(f)
+                remark = info.get('remark')
+            except Exception as e:
+                logger.error(f'Error reading {info_file}: {e}')
+        chats.append({'id': name, 'remark': remark})
     return jsonify({'chats': chats})
 
 @app.route('/messages/<chat_id>')
 @requires_auth
 def get_messages(chat_id):
-    messages = load_messages(chat_id)
-    total = len(messages)
+    conn = get_db(chat_id)
+    if not conn:
+        return jsonify({'total': 0, 'offset': 0, 'messages': []})
+
     offset = int(request.args.get('offset', 0))
     limit = int(request.args.get('limit', 20))
+
+    cur = conn.cursor()
+    cur.execute('SELECT COUNT(*) FROM messages WHERE chat_id=?', (chat_id,))
+    total = cur.fetchone()[0]
     if offset < 0:
         offset = max(total + offset, 0)
-    end = min(offset + limit, total)
-    return jsonify({'total': total, 'offset': offset, 'messages': messages[offset:end]})
+
+    cur.execute('SELECT * FROM messages WHERE chat_id=? ORDER BY timestamp LIMIT ? OFFSET ?',
+                (chat_id, limit, offset))
+    rows = cur.fetchall()
+    messages = []
+    for row in rows:
+        item = dict(row)
+        if item.get('og_info'):
+            try:
+                item['og_info'] = json.loads(item['og_info'])
+            except Exception:
+                item['og_info'] = None
+        messages.append(item)
+    conn.close()
+    return jsonify({'total': total, 'offset': offset, 'messages': messages})
 
 @app.route('/search/<chat_id>')
 @requires_auth
 def search_messages(chat_id):
     query = request.args.get('q', '').lower()
-    messages = load_messages(chat_id)
+    conn = get_db(chat_id)
+    if not conn:
+        return jsonify({'total': 0, 'results': []})
+
+    cur = conn.cursor()
+    cur.execute('SELECT COUNT(*) FROM messages WHERE chat_id=?', (chat_id,))
+    total = cur.fetchone()[0]
+
     if not query:
-        return jsonify({'total': len(messages), 'results': []})
-    result = []
-    for idx, m in enumerate(messages):
-        if (query in m.get('date', '').lower() or
-                query in (m.get('msg') or '').lower() or
-                query in m.get('msg_file_name', '').lower()):
-            item = dict(m)
+        conn.close()
+        return jsonify({'total': total, 'results': []})
+
+    cur.execute('SELECT * FROM messages WHERE chat_id=? ORDER BY timestamp', (chat_id,))
+    rows = cur.fetchall()
+    results = []
+    for idx, row in enumerate(rows):
+        if (query in row['date'].lower() or
+                (row['msg'] or '').lower().find(query) != -1 or
+                row['msg_file_name'].lower().find(query) != -1):
+            item = dict(row)
+            if item.get('og_info'):
+                try:
+                    item['og_info'] = json.loads(item['og_info'])
+                except Exception:
+                    item['og_info'] = None
             item['index'] = idx
-            result.append(item)
-    return jsonify({'total': len(messages), 'results': result})
+            results.append(item)
+    conn.close()
+    return jsonify({'total': total, 'results': results})
 
 # 错误处理
 @app.errorhandler(404)

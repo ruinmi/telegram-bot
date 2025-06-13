@@ -674,9 +674,9 @@
                     select.innerHTML = '<option value="">切换聊天</option>';
                     data.chats.forEach(chat => {
                         const opt = document.createElement('option');
-                        opt.value = chat;
-                        opt.textContent = chat;
-                        if (chat === '{{ chat_id }}') opt.selected = true;
+                        opt.value = chat.id;
+                        opt.textContent = chat.remark || chat.id;
+                        if (chat.id === '{{ chat_id }}') opt.selected = true;
                         select.appendChild(opt);
                     });
                 });
