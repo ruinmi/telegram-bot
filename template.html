@@ -178,17 +178,27 @@
             let allMessages = [];
             const loader = document.getElementById('loader');
             loader.classList.remove('hidden');
-            // 动态加载 JSON 文件
-            function loadMessages() {
-                fetch('./data/{{ chat_id }}/messages.json')
+            const chatId = '{{ chat_id }}';
+            const pageSize = 20;
+            let oldestIndex = 0;
+            let totalMessages = 0;
+            // 动态加载 JSON 数据
+            function fetchMessages(offset, limit) {
+                return fetch(`/messages/${chatId}?offset=${offset}&limit=${limit}`)
                     .then(response => {
                         if (!response.ok) {
                             throw new Error('无法加载消息数据');
                         }
                         return response.json();
-                    })
+                    });
+            }
+
+            function loadMessages() {
+                fetchMessages(-pageSize, pageSize)
                     .then(data => {
-                        allMessages = data;
+                        allMessages = data.messages;
+                        oldestIndex = data.offset;
+                        totalMessages = data.total;
                         loadInitialMessages();
                     })
                     .catch(error => {
@@ -364,11 +374,10 @@
                 });
             }
 
-            // 初始加载最新的20条消息
+            // 初始加载最新的消息
             function loadInitialMessages() {
-                let total = allMessages.length;
-                currentStartIndex = Math.max(0, total - 20);
-                renderMessagesRange(currentStartIndex, total).then(() => {
+                currentStartIndex = allMessages.length;
+                renderMessagesRange(0, currentStartIndex).then(() => {
                     waitForMediaToLoad().then(() => {
                         window.scrollTo(0, document.body.scrollHeight);
                     });
@@ -396,23 +405,24 @@
                 return Promise.all([...images, ...videos]);
             }
 
-            // 向上加载更多消息（每次加载20条）
+            // 向上加载更多消息
             async function loadOlderMessages() {
-                if (currentStartIndex <= 0) return;
-                let newStart = Math.max(0, currentStartIndex - 20);
-                await renderMessagesRange(newStart, currentStartIndex, true)
-                currentStartIndex = newStart;
+                if (oldestIndex <= 0) return;
+                let newOffset = Math.max(0, oldestIndex - pageSize);
+                let count = oldestIndex - newOffset;
+                const data = await fetchMessages(newOffset, count);
+                oldestIndex = data.offset;
+                allMessages = data.messages.concat(allMessages);
+                await renderMessagesRange(0, data.messages.length, true);
+                currentStartIndex += data.messages.length;
             }
 
             function loadOlderMessagesWithScrollAdjustment() {
-                // 记录加载前页面的高度和滚动位置
                 const prevHeight = document.body.scrollHeight;
                 const prevScrollY = window.scrollY;
                 loadOlderMessages().then(() => {
-                    // 加载完新内容后，计算新增内容的高度
                     const newHeight = document.body.scrollHeight;
                     const deltaHeight = newHeight - prevHeight;
-                    // 调整滚动位置，让用户看到原本的位置
                     window.scrollTo(0, prevScrollY + deltaHeight);
                 });
             }
@@ -422,7 +432,7 @@
             function checkScroll() {
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(function() {
-                    if (!isSearching && window.scrollY < 50 && currentStartIndex > 0) {
+                    if (!isSearching && window.scrollY < 50 && oldestIndex > 0) {
                         loadOlderMessagesWithScrollAdjustment();
                     }
                 }, 200);
@@ -430,8 +440,8 @@
             window.addEventListener('scroll', checkScroll);
 
             // 搜索函数，利用 DocumentFragment 组装 DOM，非连续组之间插入分隔符
-            function searchMessages() { 
-                const searchValue = document.getElementById('searchBox').value.toLowerCase();
+            function searchMessages() {
+                const searchValue = document.getElementById('searchBox').value.trim().toLowerCase();
                 if (!searchValue) {
                     isSearching = false;
                     messagesContainer.innerHTML = "";
@@ -439,45 +449,18 @@
                     return;
                 }
                 isSearching = true;
-                let matchedIndices = new Set();
-                for (let i = 0; i < allMessages.length; i++) {
-                    let dateText = allMessages[i].date.toLowerCase();
-                    let msgText = allMessages[i].msg.toLowerCase();
-                    let fileName = allMessages[i].msg_file_name.toLowerCase();
-                    if (dateText.includes(searchValue) || msgText.includes(searchValue) || fileName.includes(searchValue)) {
-                        matchedIndices.add(i);
-                    }
-                }
-                let sortedIndices = Array.from(matchedIndices).sort((a, b) => a - b);
-                messagesContainer.innerHTML = "";
-                let fragment = document.createDocumentFragment();
-                
-                if (sortedIndices.length > 0 && sortedIndices[0] > 0) {
-                    let upSeparator = createSeparatorElement(0, sortedIndices[0], "up");
-                    fragment.appendChild(upSeparator);
-                }
-                
-                let lastIndex = null;
-                for (let i = 0; i < sortedIndices.length; i++) {
-                    let idx = sortedIndices[i];
-                    if (lastIndex !== null && idx !== lastIndex + 1) {
-                        let downSeparator = createSeparatorElement(lastIndex, idx, "down");
-                        fragment.appendChild(downSeparator);
-                        let upSeparator = createSeparatorElement(lastIndex, idx, "up");
-                        fragment.appendChild(upSeparator);
-                    }
-                    let tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = createMessageHtml(allMessages[idx], idx, searchValue);
-                    let messageElement = tempDiv.firstElementChild;
-                    fragment.appendChild(messageElement);
-                    lastIndex = idx;
-                }
-                
-                if (lastIndex !== null && lastIndex < allMessages.length - 1) {
-                    let downSeparator = createSeparatorElement(lastIndex, allMessages.length - 1, "down");
-                    fragment.appendChild(downSeparator);
-                }
-                messagesContainer.appendChild(fragment);
+                fetch(`/search/${chatId}?q=${encodeURIComponent(searchValue)}`)
+                    .then(response => response.json())
+                    .then(results => {
+                        messagesContainer.innerHTML = "";
+                        let fragment = document.createDocumentFragment();
+                        results.forEach(msg => {
+                            let tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = createMessageHtml(msg, 0, searchValue);
+                            fragment.appendChild(tempDiv.firstElementChild);
+                        });
+                        messagesContainer.appendChild(fragment);
+                    });
             }
 
             document.addEventListener('DOMContentLoaded', loadMessages);

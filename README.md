@@ -4,12 +4,13 @@
 
 该项目包含两个主要功能：
 1. 导出Telegram聊天记录并保存为JSON文件。
-2. 将导出的聊天记录生成HTML文件，方便浏览和搜索。
+2. 将导出的聊天记录生成HTML文件，并通过简单的服务器进行浏览和搜索。
 
 ## 文件说明
 
 - `update_messages.py`：负责导出Telegram聊天记录并保存为JSON文件。
-- `generate_html.py`：负责将JSON格式的聊天记录转换为HTML文件。
+- `main.py`：解析消息并生成 HTML 文件。
+- `server.py`：提供接口按需加载聊天记录并支持搜索。
 
 ## 使用方法
 
@@ -31,14 +32,22 @@
 
 运行以下命令导出聊天记录并生成HTML文件：
 ```bash
-python generate_html.py <user_id>
+python main.py <user_id>
 ```
 其中，`<user_id>`是你要生成HTML文件的用户ID。
 
 如果你已经导出过聊天记录，可以使用`--ne`选项跳过导出步骤：
 ```bash
-python generate_html.py <user_id> --ne
+python main.py <user_id> --ne
 ```
+
+### 启动服务器查看聊天记录
+
+导出并生成 HTML 后，可以启动内置服务器：
+```bash
+python server.py
+```
+然后在浏览器中访问 `http://localhost:5000/chat/<user_id>` 查看聊天记录。
 
 ## 日志文件
 
