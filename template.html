@@ -1,13 +1,13 @@
 <html>
     <head>
         <meta charset="utf-8">
-        <link rel="icon" href="resources/favicon.svg" type="image/svg+xml">
+        <link rel="icon" href="/resources/favicon.svg" type="image/svg+xml">
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
         <title>聊天记录</title>
         <style>
             @font-face {
                 font-family: 'Roboto';
-                src: url('fonts/Roboto-Regular.ttf') format('truetype');
+                src: url('/fonts/Roboto-Regular.ttf') format('truetype');
                 font-weight: normal;
                 font-style: normal;
             }
@@ -21,11 +21,11 @@
                 color: #333; margin: 0;
                 display: flex;
                 justify-content: center;
-                background-image: url('resources/bg.png');
+                background-image: url('/resources/bg.png');
                 overscroll-behavior: contain;
             }
             .container { max-width: 1000px; width: 100%; }
-            #header { position: fixed; display: flex; align-items: center; background: #000; z-index: 1; width: 100%; padding: 10px 0 7px; }
+            #header { position: fixed; display: flex; align-items: center; background: #000; z-index: 999; width: 100%; padding: 10px 0 7px; }
             #searchBox { padding: 10px; width: 300px; outline: none; background: #000; border: 1px solid #ffffff38; color: white; border-radius: .9375rem; }
             #confirmSearch { margin-left: 10px; background: #212121; color: white; border: none; border-radius: .575rem; cursor: pointer; line-height: 16px; width: 65px; height: 37px; }
             #messages { padding: 50px 0 60px 0; }
@@ -178,17 +178,28 @@
             let allMessages = [];
             const loader = document.getElementById('loader');
             loader.classList.remove('hidden');
-            // 动态加载 JSON 文件
-            function loadMessages() {
-                fetch('./data/{{ chat_id }}/messages.json')
+            const chatId = '{{ chat_id }}';
+            const pageSize = 20;
+            const contextSize = 5
+            let oldestIndex = 0;
+            let totalMessages = 0;
+            // 动态加载 JSON 数据
+            function fetchMessages(offset, limit) {
+                return fetch(`/messages/${chatId}?offset=${offset}&limit=${limit}`)
                     .then(response => {
                         if (!response.ok) {
                             throw new Error('无法加载消息数据');
                         }
                         return response.json();
-                    })
+                    });
+            }
+
+            function loadMessages() {
+                fetchMessages(-pageSize, pageSize)
                     .then(data => {
-                        allMessages = data;
+                        allMessages = data.messages;
+                        oldestIndex = data.offset;
+                        totalMessages = data.total;
                         loadInitialMessages();
                     })
                     .catch(error => {
@@ -232,15 +243,15 @@
                 if (message.msg_file_name) {
                     let lowerName = message.msg_file_name.toLowerCase();
                     if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
-                        mediaHtml = `<div class="image"><img style="max-width: 100%; max-height: ${message.display_height}px" src="${message.msg_file_name}" alt="图片" /></div>`;
+                        mediaHtml = `<div class="image"><img style="max-width: 100%; max-height: ${message.display_height}px" src="/${message.msg_file_name}" alt="图片" /></div>`;
                     } else if (lowerName.endsWith('.mp4') || lowerName.endsWith('.mov') || lowerName.endsWith('.avi')) {
-                        mediaHtml = `<div class="video"><video controls><source src="${message.msg_file_name}" type="video/mp4">Your browser does not support the video tag.</video></div>`;
+                        mediaHtml = `<div class="video"><video controls><source src="/${message.msg_file_name}" type="video/mp4">Your browser does not support the video tag.</video></div>`;
                     } else {
                         let parts = message.msg_file_name.split('/');
                         let fileName = parts[parts.length - 1];
                         mediaHtml = `
                             <div class="download">
-                                <a href="${message.msg_file_name}" download>
+                                <a href="/${message.msg_file_name}" download>
                                     <svg style="vertical-align: bottom;" t="1739785072303" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1483" width="24" height="24"><path d="M928 448c-17.7 0-32 14.3-32 32v319.5c0 17.9-14.6 32.5-32.5 32.5h-703c-17.9 0-32.5-14.6-32.5-32.5V480c0-17.7-14.3-32-32-32s-32 14.3-32 32v319.5c0 53.2 43.3 96.5 96.5 96.5h703c53.2 0 96.5-43.3 96.5-96.5V480c0-17.7-14.3-32-32-32z" fill="#fff" p-id="1484"></path><path d="M489.4 726.6c0.4 0.4 0.8 0.7 1.2 1.1l0.4 0.4c0.2 0.2 0.5 0.4 0.7 0.6 0.2 0.2 0.4 0.3 0.6 0.4 0.2 0.2 0.5 0.4 0.7 0.5 0.2 0.1 0.4 0.3 0.6 0.4 0.2 0.2 0.5 0.3 0.7 0.5 0.2 0.1 0.4 0.2 0.6 0.4 0.3 0.2 0.5 0.3 0.8 0.5 0.2 0.1 0.3 0.2 0.5 0.3 0.3 0.2 0.6 0.3 0.9 0.5 0.1 0.1 0.3 0.1 0.4 0.2 0.3 0.2 0.7 0.3 1 0.5 0.1 0.1 0.2 0.1 0.3 0.2 0.4 0.2 0.7 0.3 1.1 0.5 0.1 0 0.2 0.1 0.2 0.1 0.4 0.2 0.8 0.3 1.2 0.5 0.1 0 0.1 0 0.2 0.1 0.4 0.2 0.9 0.3 1.3 0.4h0.1c0.5 0.1 0.9 0.3 1.4 0.4h0.1c0.5 0.1 0.9 0.2 1.4 0.3h0.2c0.4 0.1 0.9 0.2 1.3 0.2h0.4c0.4 0.1 0.8 0.1 1.2 0.1 0.3 0 0.5 0 0.8 0.1 0.3 0 0.5 0 0.8 0.1H512.2c0.7 0 1.3 0 1.9-0.1h0.6c0.6 0 1.2-0.1 1.8-0.2h0.3c0.7-0.1 1.4-0.2 2.1-0.4 0.1 0 0.2 0 0.3-0.1 0.7-0.2 1.3-0.3 2-0.5h0.1c0.7-0.2 1.4-0.5 2.1-0.7h0.1l2.1-0.9h0.1c0.7-0.3 1.4-0.7 2-1.1 0.1 0 0.1-0.1 0.2-0.1 1.6-0.9 3.2-2 4.6-3.2 0.2-0.2 0.4-0.4 0.6-0.5 0.2-0.2 0.4-0.3 0.6-0.5 0.2-0.2 0.5-0.4 0.7-0.7l0.4-0.4c0.1-0.1 0.2-0.1 0.2-0.2l191.7-191.7c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L544 626.7V96c0-17.7-14.3-32-32-32s-32 14.3-32 32v530.7L342.6 489.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192.1 191.9z" fill="#fff" p-id="1485"></path></svg>
                                     ${fileName}
                                 </a>
@@ -279,8 +290,8 @@
                         </div>`;
             }
 
-            // 创建可点击的分隔符元素，点击后仅展示 gap 内 2 条上下文消息，且新展示的消息在分隔符上方展示，新的分隔符在下方（如果还有剩余）
-            function createSeparatorElement(startIndex, endIndex, direction) { 
+            // 创建可点击的分隔符元素，通过接口按需加载上下文消息
+            function createSeparatorElement(startIndex, endIndex, direction, searchValue) {
                 let separator = document.createElement('div');
                 separator.className = 'separator ' + direction;
                 if (direction === "up") {
@@ -292,58 +303,44 @@
                 separator.dataset.end = endIndex;
                 separator.dataset.direction = direction;
                 separator.addEventListener('click', function() {
-                    if (separator.dataset.direction === "down") {
-                        let s = parseInt(separator.dataset.start);
-                        let e = parseInt(separator.dataset.end);
-                        let count = Math.min(2, e - s - 1);
+                    let s = parseInt(separator.dataset.start);
+                    let e = parseInt(separator.dataset.end);
+                    let dir = separator.dataset.direction;
+                    let count = Math.min(contextSize, e - s - 1);
+                    let offset = dir === "down" ? s + 1 : e - count;
+                    let parent = separator.parentNode;
+                    let nextSibling = separator.nextSibling;
+                    let prevSibling = separator.previousElementSibling;
+                    fetchMessages(offset, count).then(data => {
                         let html = "";
-                        for (let i = s + 1; i <= s + count; i++) {
-                            let messageHtml = createMessageHtml(allMessages[i], i);
+                        data.messages.forEach((m, idx) => {
+                            let messageHtml = createMessageHtml(m, offset + idx, searchValue);
                             messageHtml = messageHtml.replace('class="message', 'class="message context');
                             html += messageHtml;
-                        }
-                        let parent = separator.parentNode;
-                        let nextSibling = separator.nextSibling;
+                        });
                         parent.removeChild(separator);
                         let container = document.createElement('div');
                         container.innerHTML = html;
+                        const firstChild = container.firstChild;
                         while (container.firstChild) {
                             parent.insertBefore(container.firstChild, nextSibling);
                         }
-                        if (s + count < e - 1) {
-                            let newSeparator = createSeparatorElement(s + count, e, "down");
-                            parent.insertBefore(newSeparator, nextSibling);
+                        if (dir === "down") {
+                            if (s + count < e - 1) {
+                                let newSep = createSeparatorElement(s + count, e, "down", searchValue);
+                                parent.insertBefore(newSep, nextSibling);
+                            } else if (nextSibling) {
+                                parent.removeChild(nextSibling);
+                            }
                         } else {
-                            parent.removeChild(nextSibling);
+                            if (s + count < e - 1) {
+                                let newSep = createSeparatorElement(s, e - count, "up", searchValue);
+                                parent.insertBefore(newSep, firstChild);
+                            } else if (prevSibling) {
+                                parent.removeChild(prevSibling);
+                            }
                         }
-                    } else if (separator.dataset.direction === "up") {
-                        let s = parseInt(separator.dataset.start);
-                        let e = parseInt(separator.dataset.end);
-                        let count = Math.min(2, e - s - 1);
-                        let html = "";
-                        for (let i = e - count; i < e; i++) {
-                            let messageHtml = createMessageHtml(allMessages[i], i);
-                            messageHtml = messageHtml.replace('class="message', 'class="message context');
-                            html += messageHtml;
-                        }
-                        let parent = separator.parentNode;
-                        let nextSibling = separator.nextSibling;
-                        var downSeparator = separator.previousElementSibling;
-
-                        parent.removeChild(separator);
-                        let container = document.createElement('div');
-                        container.innerHTML = html;
-                        const topChild = container.firstChild
-                        while (container.firstChild) {
-                            parent.insertBefore(container.firstChild, nextSibling);
-                        }
-                        if (s + count < e - 1) {
-                            let newSeparator = createSeparatorElement(s, e - count, "up");
-                            parent.insertBefore(newSeparator, topChild);
-                        } else {
-                            parent.removeChild(downSeparator);
-                        }
-                    }
+                    });
                 });
                 return separator;
             }
@@ -364,11 +361,10 @@
                 });
             }
 
-            // 初始加载最新的20条消息
+            // 初始加载最新的消息
             function loadInitialMessages() {
-                let total = allMessages.length;
-                currentStartIndex = Math.max(0, total - 20);
-                renderMessagesRange(currentStartIndex, total).then(() => {
+                currentStartIndex = allMessages.length;
+                renderMessagesRange(0, currentStartIndex).then(() => {
                     waitForMediaToLoad().then(() => {
                         window.scrollTo(0, document.body.scrollHeight);
                     });
@@ -396,23 +392,24 @@
                 return Promise.all([...images, ...videos]);
             }
 
-            // 向上加载更多消息（每次加载20条）
+            // 向上加载更多消息
             async function loadOlderMessages() {
-                if (currentStartIndex <= 0) return;
-                let newStart = Math.max(0, currentStartIndex - 20);
-                await renderMessagesRange(newStart, currentStartIndex, true)
-                currentStartIndex = newStart;
+                if (oldestIndex <= 0) return;
+                let newOffset = Math.max(0, oldestIndex - pageSize);
+                let count = oldestIndex - newOffset;
+                const data = await fetchMessages(newOffset, count);
+                oldestIndex = data.offset;
+                allMessages = data.messages.concat(allMessages);
+                await renderMessagesRange(0, data.messages.length, true);
+                currentStartIndex += data.messages.length;
             }
 
             function loadOlderMessagesWithScrollAdjustment() {
-                // 记录加载前页面的高度和滚动位置
                 const prevHeight = document.body.scrollHeight;
                 const prevScrollY = window.scrollY;
                 loadOlderMessages().then(() => {
-                    // 加载完新内容后，计算新增内容的高度
                     const newHeight = document.body.scrollHeight;
                     const deltaHeight = newHeight - prevHeight;
-                    // 调整滚动位置，让用户看到原本的位置
                     window.scrollTo(0, prevScrollY + deltaHeight);
                 });
             }
@@ -422,16 +419,16 @@
             function checkScroll() {
                 clearTimeout(debounceTimer);
                 debounceTimer = setTimeout(function() {
-                    if (!isSearching && window.scrollY < 50 && currentStartIndex > 0) {
+                    if (!isSearching && window.scrollY < 50 && oldestIndex > 0) {
                         loadOlderMessagesWithScrollAdjustment();
                     }
                 }, 200);
             }
             window.addEventListener('scroll', checkScroll);
 
-            // 搜索函数，利用 DocumentFragment 组装 DOM，非连续组之间插入分隔符
-            function searchMessages() { 
-                const searchValue = document.getElementById('searchBox').value.toLowerCase();
+            // 搜索函数，服务器返回匹配消息及其索引，非连续组之间插入加载按钮
+            function searchMessages() {
+                const searchValue = document.getElementById('searchBox').value.trim().toLowerCase();
                 if (!searchValue) {
                     isSearching = false;
                     messagesContainer.innerHTML = "";
@@ -439,45 +436,33 @@
                     return;
                 }
                 isSearching = true;
-                let matchedIndices = new Set();
-                for (let i = 0; i < allMessages.length; i++) {
-                    let dateText = allMessages[i].date.toLowerCase();
-                    let msgText = allMessages[i].msg.toLowerCase();
-                    let fileName = allMessages[i].msg_file_name.toLowerCase();
-                    if (dateText.includes(searchValue) || msgText.includes(searchValue) || fileName.includes(searchValue)) {
-                        matchedIndices.add(i);
-                    }
-                }
-                let sortedIndices = Array.from(matchedIndices).sort((a, b) => a - b);
-                messagesContainer.innerHTML = "";
-                let fragment = document.createDocumentFragment();
-                
-                if (sortedIndices.length > 0 && sortedIndices[0] > 0) {
-                    let upSeparator = createSeparatorElement(0, sortedIndices[0], "up");
-                    fragment.appendChild(upSeparator);
-                }
-                
-                let lastIndex = null;
-                for (let i = 0; i < sortedIndices.length; i++) {
-                    let idx = sortedIndices[i];
-                    if (lastIndex !== null && idx !== lastIndex + 1) {
-                        let downSeparator = createSeparatorElement(lastIndex, idx, "down");
-                        fragment.appendChild(downSeparator);
-                        let upSeparator = createSeparatorElement(lastIndex, idx, "up");
-                        fragment.appendChild(upSeparator);
-                    }
-                    let tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = createMessageHtml(allMessages[idx], idx, searchValue);
-                    let messageElement = tempDiv.firstElementChild;
-                    fragment.appendChild(messageElement);
-                    lastIndex = idx;
-                }
-                
-                if (lastIndex !== null && lastIndex < allMessages.length - 1) {
-                    let downSeparator = createSeparatorElement(lastIndex, allMessages.length - 1, "down");
-                    fragment.appendChild(downSeparator);
-                }
-                messagesContainer.appendChild(fragment);
+                fetch(`/search/${chatId}?q=${encodeURIComponent(searchValue)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const results = data.results;
+                        totalMessages = data.total;
+                        messagesContainer.innerHTML = "";
+                        let fragment = document.createDocumentFragment();
+                        if (results.length > 0 && results[0].index > 0) {
+                            fragment.appendChild(createSeparatorElement(0, results[0].index, "up", searchValue));
+                        }
+                        let lastIndex = null;
+                        results.forEach(r => {
+                            const idx = r.index;
+                            if (lastIndex !== null && idx !== lastIndex + 1) {
+                                fragment.appendChild(createSeparatorElement(lastIndex, idx, "down", searchValue));
+                                fragment.appendChild(createSeparatorElement(lastIndex, idx, "up", searchValue));
+                            }
+                            let tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = createMessageHtml(r, idx, searchValue);
+                            fragment.appendChild(tempDiv.firstElementChild);
+                            lastIndex = idx;
+                        });
+                        if (lastIndex !== null && lastIndex < totalMessages - 1) {
+                            fragment.appendChild(createSeparatorElement(lastIndex, totalMessages - 1, "down", searchValue));
+                        }
+                        messagesContainer.appendChild(fragment);
+                    });
             }
 
             document.addEventListener('DOMContentLoaded', loadMessages);

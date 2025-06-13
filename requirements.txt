@@ -1,0 +1,3 @@
+flask
+gunicorn; platform_system != "Windows"
+waitress; platform_system == "Windows"
