@@ -25,7 +25,7 @@
                 overscroll-behavior: contain;
             }
             .container { max-width: 1000px; width: 100%; }
-            #header { position: fixed; display: flex; align-items: center; background: #000; z-index: 1; width: 100%; padding: 10px 0 7px; }
+            #header { position: fixed; display: flex; align-items: center; background: #000; z-index: 999; width: 100%; padding: 10px 0 7px; }
             #searchBox { padding: 10px; width: 300px; outline: none; background: #000; border: 1px solid #ffffff38; color: white; border-radius: .9375rem; }
             #confirmSearch { margin-left: 10px; background: #212121; color: white; border: none; border-radius: .575rem; cursor: pointer; line-height: 16px; width: 65px; height: 37px; }
             #messages { padding: 50px 0 60px 0; }
@@ -180,6 +180,7 @@
             loader.classList.remove('hidden');
             const chatId = '{{ chat_id }}';
             const pageSize = 20;
+            const contextSize = 5
             let oldestIndex = 0;
             let totalMessages = 0;
             // 动态加载 JSON 数据
@@ -305,7 +306,7 @@
                     let s = parseInt(separator.dataset.start);
                     let e = parseInt(separator.dataset.end);
                     let dir = separator.dataset.direction;
-                    let count = Math.min(pageSize, e - s - 1);
+                    let count = Math.min(contextSize, e - s - 1);
                     let offset = dir === "down" ? s + 1 : e - count;
                     let parent = separator.parentNode;
                     let nextSibling = separator.nextSibling;

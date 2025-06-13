@@ -1,0 +1,17 @@
+# /etc/systemd/system/telegrambot.service
+[Unit]
+Description=Telegram Bot
+After=network.target
+
+[Service]
+WorkingDirectory=/path/to/chat_app
+ExecStart=/usr/bin/env bash run.sh
+Restart=always
+User=www-data
+Environment=BOT_USERNAME=admin
+Environment=BOT_PASSWORD=secure123
+Environment=HOST=0.0.0.0
+Environment=PORT=8000
+
+[Install]
+WantedBy=multi-user.target
