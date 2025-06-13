@@ -76,10 +76,20 @@ def list_chats():
     data_dir = os.path.join(script_dir, 'data')
     if not os.path.isdir(data_dir):
         return jsonify({'chats': []})
-    chats = [
-        name for name in os.listdir(data_dir)
-        if os.path.isdir(os.path.join(data_dir, name))
-    ]
+    chats = []
+    for name in os.listdir(data_dir):
+        if not os.path.isdir(os.path.join(data_dir, name)):
+            continue
+        remark = None
+        info_file = os.path.join(data_dir, name, 'info.json')
+        if os.path.exists(info_file):
+            try:
+                with open(info_file, 'r', encoding='utf-8') as f:
+                    info = json.load(f)
+                remark = info.get('remark')
+            except Exception as e:
+                logger.error(f'Error reading {info_file}: {e}')
+        chats.append({'id': name, 'remark': remark})
     return jsonify({'chats': chats})
 
 @app.route('/messages/<chat_id>')

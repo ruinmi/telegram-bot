@@ -232,11 +232,21 @@ def main():
         print_help()
         return
 
-    if len(sys.argv) < 2 or len(sys.argv) > 7:
+    if len(sys.argv) < 2 or len(sys.argv) > 9:
         print("参数数量错误，请使用 '--help' 查看用法说明。")
         return
 
     chat_id = sys.argv[1]
+
+    remark = None
+    if '--remark' in sys.argv:
+        idx = sys.argv.index('--remark')
+        if idx + 1 < len(sys.argv):
+            remark = sys.argv[idx + 1]
+    elif '-r' in sys.argv:
+        idx = sys.argv.index('-r')
+        if idx + 1 < len(sys.argv):
+            remark = sys.argv[idx + 1]
 
     # 参数标志解析
     download_files = "--ndf" not in sys.argv
@@ -250,6 +260,24 @@ def main():
     messages_file = os.path.join(data_dir, f'{chat_id}_chat.json')
     messages_file_temp = os.path.join(data_dir, f'{chat_id}_chat_temp.json')
     db_path = os.path.join(data_dir, 'messages.db')
+
+    # 迁移旧的 messages.json 数据
+    old_json = os.path.join(data_dir, 'messages.json')
+    if os.path.exists(old_json) and not os.path.exists(db_path):
+        try:
+            with open(old_json, 'r', encoding='utf-8') as f:
+                old_msgs = json.load(f)
+            if isinstance(old_msgs, dict):
+                old_msgs = old_msgs.get('messages', [])
+            save_messages_to_db(db_path, chat_id, old_msgs)
+            os.remove(old_json)
+        except Exception as e:
+            print(f"Failed to migrate old JSON data: {e}")
+
+    if remark:
+        info_file = os.path.join(data_dir, 'info.json')
+        with open(info_file, 'w', encoding='utf-8') as f:
+            json.dump({'remark': remark}, f, ensure_ascii=False, indent=2)
 
     export_chat(
         chat_id, 
@@ -287,6 +315,7 @@ def print_help():
     [--ndf]             可选，禁止下载附件文件（默认会下载）。
     [--nam]             可选，禁止导出全部消息，仅导出带包含文件的消息。
     [--nrm]             可选，禁止导出原始消息数据，使用解析后的数据。
+    [--remark NAME]     可选，为该聊天设置备注名，也可使用 -r NAME。
 
 通用选项:
     -h, --help          显示此帮助信息并退出。

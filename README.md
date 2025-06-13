@@ -11,6 +11,7 @@
 - `update_messages.py`：负责导出Telegram聊天记录。
 - `main.py`：解析消息并写入数据库，同时生成 HTML 文件所需的数据。
 - `server.py`：从数据库中按需加载聊天记录并支持搜索。
+- `migrate_messages.py`：将旧版 `messages.json` 数据迁移到数据库。
 
 ## 使用方法
 
@@ -32,13 +33,20 @@
 
 运行以下命令导出聊天记录并生成HTML文件：
 ```bash
-python main.py <user_id>
+python main.py <user_id> [--remark 昵称]
 ```
-其中，`<user_id>`是你要生成HTML文件的用户ID。
+其中，`<user_id>`是你要生成HTML文件的用户ID，`--remark` 可为该聊天设置备注名。
 
 如果你已经导出过聊天记录，可以使用`--ne`选项跳过导出步骤：
 ```bash
 python main.py <user_id> --ne
+```
+
+### 迁移旧版 JSON 数据
+
+若之前的版本生成过 `messages.json` 文件，可以使用以下脚本将其迁移到数据库：
+```bash
+python migrate_messages.py <user_id>
 ```
 
 ### 启动服务器查看聊天记录
@@ -62,3 +70,4 @@ BOT_PASSWORD=你的密码 python server.py
 
 - 确保你有权限访问Telegram聊天记录。
 - 聊天记录会存储在`data/<user_id>/messages.db`数据库文件中，生成的HTML文件也会保存在当前目录。
+- 如果使用`--remark`设置备注名，相关信息会保存在`data/<user_id>/info.json`。
