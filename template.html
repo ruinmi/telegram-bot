@@ -307,6 +307,9 @@
                     let dir = separator.dataset.direction;
                     let count = Math.min(pageSize, e - s - 1);
                     let offset = dir === "down" ? s + 1 : e - count;
+                    let parent = separator.parentNode;
+                    let nextSibling = separator.nextSibling;
+                    let prevSibling = separator.previousElementSibling;
                     fetchMessages(offset, count).then(data => {
                         let html = "";
                         data.messages.forEach((m, idx) => {
@@ -314,8 +317,6 @@
                             messageHtml = messageHtml.replace('class="message', 'class="message context');
                             html += messageHtml;
                         });
-                        let parent = separator.parentNode;
-                        let nextSibling = separator.nextSibling;
                         parent.removeChild(separator);
                         let container = document.createElement('div');
                         container.innerHTML = html;
@@ -331,12 +332,11 @@
                                 parent.removeChild(nextSibling);
                             }
                         } else {
-                            let downSep = separator.previousElementSibling;
                             if (s + count < e - 1) {
                                 let newSep = createSeparatorElement(s, e - count, "up", searchValue);
                                 parent.insertBefore(newSep, firstChild);
-                            } else if (downSep) {
-                                parent.removeChild(downSep);
+                            } else if (prevSibling) {
+                                parent.removeChild(prevSibling);
                             }
                         }
                     });
