@@ -72,6 +72,18 @@ def load_messages(chat_id):
 def chat_page(chat_id):
     return render_template('template.html', chat_id=chat_id)
 
+@app.route('/chats')
+@requires_auth
+def list_chats():
+    data_dir = os.path.join(script_dir, 'data')
+    if not os.path.isdir(data_dir):
+        return jsonify({'chats': []})
+    chats = [
+        name for name in os.listdir(data_dir)
+        if os.path.isdir(os.path.join(data_dir, name))
+    ]
+    return jsonify({'chats': chats})
+
 @app.route('/messages/<chat_id>')
 @requires_auth
 def get_messages(chat_id):

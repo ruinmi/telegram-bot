@@ -14,7 +14,7 @@ logging.basicConfig(filename=log_file, level=logging.INFO,
 def export_chat(their_id, messages_file, messages_file_temp, download_files=True, all_messages=True, raw_messages=True):
     logging.info("Starting chat export...")
     # Load the last export time if it exists
-    last_export_time_file = os.path.join(script_dir, 'data', their_id, f'{their_id}-last_export_time')
+    last_export_time_file = os.path.join(script_dir, 'data', their_id, 'last_export_time')
     if os.path.exists(last_export_time_file):
         with open(last_export_time_file, 'r') as file:
             last_export_time = file.read().strip()
