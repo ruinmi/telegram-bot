@@ -6,6 +6,21 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_url_path='', static_folder=script_dir, template_folder=script_dir)
 
 
+@app.route('/resources/<path:filename>')
+def resources_files(filename):
+    return send_from_directory(os.path.join(script_dir, 'resources'), filename)
+
+
+@app.route('/fonts/<path:filename>')
+def fonts_files(filename):
+    return send_from_directory(os.path.join(script_dir, 'fonts'), filename)
+
+
+@app.route('/downloads/<path:filename>')
+def downloads_files(filename):
+    return send_from_directory(os.path.join(script_dir, 'downloads'), filename)
+
+
 def load_messages(chat_id):
     path = os.path.join(script_dir, 'data', chat_id, 'messages.json')
     if not os.path.exists(path):

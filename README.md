@@ -49,6 +49,9 @@ python server.py
 ```
 然后在浏览器中访问 `http://localhost:5000/chat/<user_id>` 查看聊天记录。
 
+静态文件会从根路径提供，例如 `http://localhost:5000/resources/bg.png`、
+`http://localhost:5000/fonts/Roboto-Regular.ttf` 和 `/downloads/<user_id>/...`。
+
 ## 日志文件
 
 导出聊天记录的日志会保存在`update_messages.log`文件中，方便排查问题。
