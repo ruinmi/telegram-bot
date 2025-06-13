@@ -45,9 +45,11 @@ python main.py <user_id> --ne
 
 导出并生成 HTML 后，可以启动内置服务器：
 ```bash
-python server.py
+BOT_PASSWORD=你的密码 python server.py
 ```
-然后在浏览器中访问 `http://localhost:5000/chat/<user_id>` 查看聊天记录。
+服务器默认只监听本机的 `127.0.0.1`，并启用基本认证。访问
+`http://localhost:5000/chat/<user_id>` 时浏览器会询问用户名和密码，默
+认用户名为 `user`，密码由 `BOT_PASSWORD` 环境变量指定。
 
 静态文件会从根路径提供，例如 `http://localhost:5000/resources/bg.png`、
 `http://localhost:5000/fonts/Roboto-Regular.ttf` 和 `/downloads/<user_id>/...`。
