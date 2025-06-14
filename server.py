@@ -158,9 +158,15 @@ def search_messages(chat_id):
 
     # 查询匹配项
     sql = f'''
-        SELECT * FROM messages
-        WHERE chat_id=? AND {where_clause}
-        ORDER BY timestamp
+        SELECT
+            m.*,
+            (
+                SELECT COUNT(*) FROM messages m2
+                WHERE m2.chat_id = m.chat_id AND m2.timestamp <= m.timestamp
+            ) - 1 AS idx
+        FROM messages m
+        WHERE m.chat_id=? AND {where_clause}
+        ORDER BY m.timestamp
     '''
     cur.execute(sql, (chat_id, *params))
     rows = cur.fetchall()
@@ -174,13 +180,15 @@ def search_messages(chat_id):
     total = cur.fetchone()[0]
     
     results = []
-    for row in enumerate(rows):
+    for row in rows:
         item = dict(row)
         if item.get('og_info'):
             try:
                 item['og_info'] = json.loads(item['og_info'])
             except Exception:
                 item['og_info'] = None
+        if 'idx' in item:
+            item['index'] = item.pop('idx')
         results.append(item)
     conn.close()
     return jsonify({'total': total, 'results': results})
