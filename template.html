@@ -400,24 +400,43 @@
         const messagesContainer = document.getElementById('messages');
         function highlightText(text, searchValue) {
             if (!searchValue) return text;
-            // if text contains url, and searchValue is contained in url, highlight the whole url
-            if (text.includes('http')) {
-                const urlRegex = /(https?:\/\/[^\s]+)/g;
-                const urls = text.match(urlRegex);
-                if (urls) {
-                    for (let url of urls) {
-                        if (url.toLowerCase().includes(searchValue)) {
-                            text = text.replace(url, `<span class="highlight">${url}</span>`);
-                        }
-                    }
-                }
-                return text;
+
+            // 提取URL，并用占位符替换
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+            const placeholders = [];
+            text = text.replace(urlRegex, (match) => {
+                const index = placeholders.length;
+                placeholders.push(match);
+                return `__URL_PLACEHOLDER_${index}__`;
+            });
+
+            // 分割关键词（支持多个关键词）
+            const keywords = searchValue
+                .trim()
+                .split(/\s+/) // 按多个空格、Tab分隔
+                .filter(Boolean)
+                .map(k => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')); // 转义正则特殊字符
+
+            if (keywords.length > 0) {
+                const regex = new RegExp(`(${keywords.join('|')})`, 'gi');
+                text = text.replace(regex, '<span class="highlight">$1</span>');
             }
 
-            // 创建正则表达式，'gi' 表示全局、不区分大小写
-            const regex = new RegExp(`(${searchValue})`, 'gi');
-            return text.replace(regex, '<span class="highlight">$1</span>');
+            // 恢复URL占位符，并根据searchValue判断是否需要高亮整个URL
+            placeholders.forEach((url, index) => {
+                const shouldHighlight = keywords.some(keyword =>
+                    url.toLowerCase().includes(keyword.toLowerCase())
+                );
+                const replacement = shouldHighlight
+                    ? `<span class="highlight">${url}</span>`
+                    : url;
+                text = text.replace(`__URL_PLACEHOLDER_${index}__`, replacement);
+            });
+
+            return text;
         }
+
         // 根据单个消息数据生成 HTML 结构
         function createMessageHtml(message, index, searchValue) {
             let position = message.user === '我' ? 'right' : 'left';
