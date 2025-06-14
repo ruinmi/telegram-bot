@@ -126,34 +126,62 @@ def get_messages(chat_id):
 @app.route('/search/<chat_id>')
 @requires_auth
 def search_messages(chat_id):
-    query = request.args.get('q', '').lower()
+    query = request.args.get('q', '').strip().lower()
     conn = get_db(chat_id)
     if not conn:
         return jsonify({'total': 0, 'results': []})
 
     cur = conn.cursor()
-    cur.execute('SELECT COUNT(*) FROM messages WHERE chat_id=?', (chat_id,))
-    total = cur.fetchone()[0]
-
     if not query:
+        cur.execute('SELECT COUNT(*) FROM messages WHERE chat_id=?', (chat_id,))
+        total = cur.fetchone()[0]
         conn.close()
         return jsonify({'total': total, 'results': []})
 
-    cur.execute('SELECT * FROM messages WHERE chat_id=? ORDER BY timestamp', (chat_id,))
+    keywords = query.split()
+
+    # 动态构建 SQL 条件
+    conditions = []
+    params = []
+    for kw in keywords:
+        pattern = f"%{kw}%"
+        conditions.append('(' +
+                          ' OR '.join([
+                              'LOWER(date) LIKE ?',
+                              'LOWER(COALESCE(msg, "")) LIKE ?',
+                              'LOWER(COALESCE(msg_file_name, "")) LIKE ?'
+                          ]) +
+                          ')')
+        params.extend([pattern, pattern, pattern])
+
+    where_clause = ' AND '.join(conditions)
+
+    # 查询匹配项
+    sql = f'''
+        SELECT * FROM messages
+        WHERE chat_id=? AND {where_clause}
+        ORDER BY timestamp
+    '''
+    cur.execute(sql, (chat_id, *params))
     rows = cur.fetchall()
+    
+    # 查询总数
+    sql_count = f'''
+        SELECT COUNT(*) FROM messages
+        WHERE chat_id=? AND {where_clause}
+    '''
+    cur.execute(sql_count, (chat_id, *params))
+    total = cur.fetchone()[0]
+    
     results = []
-    for idx, row in enumerate(rows):
-        if (query in row['date'].lower() or
-                (row['msg'] or '').lower().find(query) != -1 or
-                row['msg_file_name'].lower().find(query) != -1):
-            item = dict(row)
-            if item.get('og_info'):
-                try:
-                    item['og_info'] = json.loads(item['og_info'])
-                except Exception:
-                    item['og_info'] = None
-            item['index'] = idx
-            results.append(item)
+    for row in enumerate(rows):
+        item = dict(row)
+        if item.get('og_info'):
+            try:
+                item['og_info'] = json.loads(item['og_info'])
+            except Exception:
+                item['og_info'] = None
+        results.append(item)
     conn.close()
     return jsonify({'total': total, 'results': results})
 

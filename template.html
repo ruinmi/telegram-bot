@@ -671,7 +671,6 @@
                 .then(res => res.json())
                 .then(data => {
                     const select = document.getElementById('chatSelect');
-                    select.innerHTML = '<option value="">切换聊天</option>';
                     data.chats.forEach(chat => {
                         const opt = document.createElement('option');
                         opt.value = chat.id;
