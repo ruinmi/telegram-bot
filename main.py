@@ -15,6 +15,8 @@ import sqlite3
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 OG_DATA_FILE = 'data/og_data.json'
+
+
 # 加载已有的Open Graph数据
 def load_og_data():
     f = os.path.join(script_dir, OG_DATA_FILE)
@@ -23,19 +25,23 @@ def load_og_data():
             return json.load(file)
     return {}
 
+
 # 保存Open Graph数据到本地
 def save_og_data(og_data):
     with open(os.path.join(script_dir, OG_DATA_FILE), 'w', encoding='utf-8') as file:
         json.dump(og_data, file, ensure_ascii=False, indent=4)
 
+
 # 根据URL生成唯一的键值
 def generate_url_key(url):
     return md5(url.encode('utf-8')).hexdigest()
+
 
 def get_image_size(image_path):
     with Image.open(image_path) as img:
         width, height = img.size
     return width, height
+
 
 def calculate_telegram_image_display(file_path, og_width, og_height):
     original_width, original_height = None, None
@@ -52,7 +58,7 @@ def calculate_telegram_image_display(file_path, og_width, og_height):
         original_height = int(og_height)
     else:
         return None, None
-    max_width_ratio = 0.7 
+    max_width_ratio = 0.7
     max_height_ratio = 0.7
     max_display_width = 1000 * max_width_ratio
     max_display_height = 800 * max_height_ratio
@@ -68,21 +74,24 @@ def calculate_telegram_image_display(file_path, og_width, og_height):
         display_width = display_height * aspect_ratio
     return int(display_width), int(display_height)
 
+
 def load_json(file_path):
     with open(file_path, "r", encoding="utf-8") as infile:
         return json.load(infile)
 
+
 def convert_timestamp_to_date(timestamp, tz):
     return datetime.fromtimestamp(timestamp, tz).strftime('%Y-%m-%d %H:%M:%S')
+
 
 def get_open_graph_info(id, url, script_dir):
     og_data = load_og_data()  # 加载本地存储的Open Graph数据
     # 如果数据已经缓存，直接返回缓存的数据
-    if url in og_data:
+    if url in og_data and og_data[url]:
         return og_data[url]
     try:
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:89.0) Gecko/20100101 Firefox/89.0 (compatible; Baiduspider/2.0; +http://www.baidu.com/search/spider.html)'
+            'User-Agent': r"Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.96 Mobile Safari/537.36 TelegramBot (like TwitterBot)"
         }
         response = requests.get(url, timeout=5, headers=headers)
         if response.status_code == 200:
@@ -150,6 +159,7 @@ def get_open_graph_info(id, url, script_dir):
         save_og_data(og_data)
         return None
 
+
 def parse_messages(id, raw_messages, tz, script_dir):
     messages = []
     for raw_message in raw_messages:
@@ -176,18 +186,19 @@ def parse_messages(id, raw_messages, tz, script_dir):
         user = '' if user_id is None else '我'
 
         messages.append({
-            'date': date, 
-            'timestamp': timestamp, 
-            'msg_id': msg_id, 
-            'msg_file_name': msg_file_name, 
-            'user': user, 
-            'msg': msg_text, 
-            'display_height': display_height, 
+            'date': date,
+            'timestamp': timestamp,
+            'msg_id': msg_id,
+            'msg_file_name': msg_file_name,
+            'user': user,
+            'msg': msg_text,
+            'display_height': display_height,
             'display_width': display_width,
             'og_info': og_info
         })
     # 按时间正序排列（旧的在前，新消息在后）
     return sorted(messages, key=lambda x: x['date'])
+
 
 def save_messages_to_db(db_path, chat_id, messages):
     conn = sqlite3.connect(db_path)
@@ -226,6 +237,37 @@ def save_messages_to_db(db_path, chat_id, messages):
     conn.commit()
     conn.close()
 
+
+def update_og_info(db_path, chat_id):
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    
+    # 获取该 chat_id 的所有消息
+    cursor.execute('SELECT msg_id, msg FROM messages WHERE chat_id = ?', (chat_id,))
+    rows = cursor.fetchall()
+    update_sql = '''
+        UPDATE messages
+        SET og_info = ?
+        WHERE chat_id = ? AND msg_id = ?
+    '''
+    for msg_id, msg in rows:
+        if not msg:
+            continue
+        links = re.findall(r'(https?://\S+)', msg)
+        if not links:
+            continue
+
+        try:
+            og_info = get_open_graph_info(chat_id, links[0], script_dir)
+            og_info_json = json.dumps(og_info, ensure_ascii=False)
+            cursor.execute(update_sql, (og_info_json, chat_id, msg_id))
+        except Exception as e:
+            print(f"处理 msg_id={msg_id} 出错: {e}")
+
+    conn.commit()
+    conn.close()
+
+
 def main():
     # 检测是否需要显示帮助信息
     if "--help" in sys.argv or "-h" in sys.argv:
@@ -261,6 +303,10 @@ def main():
     messages_file_temp = os.path.join(data_dir, f'{chat_id}_chat_temp.json')
     db_path = os.path.join(data_dir, 'messages.db')
 
+    if '--og-update' in sys.argv:
+        update_og_info(db_path, chat_id)
+        return
+
     # 迁移旧的 messages.json 数据
     old_json = os.path.join(data_dir, 'messages.json')
     if os.path.exists(old_json) and not os.path.exists(db_path):
@@ -280,11 +326,11 @@ def main():
             json.dump({'remark': remark}, f, ensure_ascii=False, indent=2)
 
     export_chat(
-        chat_id, 
-        messages_file, 
-        messages_file_temp, 
-        download_files=download_files, 
-        all_messages=all_messages, 
+        chat_id,
+        messages_file,
+        messages_file_temp,
+        download_files=download_files,
+        all_messages=all_messages,
         raw_messages=raw_messages
     )
 
@@ -300,7 +346,7 @@ def main():
         os.remove(messages_file_temp)
     if os.path.exists(messages_file):
         os.remove(messages_file)
-        
+
     print(f"Messages data saved to {db_path}")
 
 
@@ -316,6 +362,7 @@ def print_help():
     [--nam]             可选，禁止导出全部消息，仅导出带包含文件的消息。
     [--nrm]             可选，禁止导出原始消息数据，使用解析后的数据。
     [--remark NAME]     可选，为该聊天设置备注名，也可使用 -r NAME。
+    [--og-update]       可选，更新空的og信息。
 
 通用选项:
     -h, --help          显示此帮助信息并退出。
@@ -330,6 +377,7 @@ def print_help():
     2. 多个选项可以同时使用，顺序不限。
 """
     print(help_text)
+
 
 if __name__ == "__main__":
     main()
