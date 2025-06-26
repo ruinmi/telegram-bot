@@ -84,7 +84,7 @@ def convert_timestamp_to_date(timestamp, tz):
     return datetime.fromtimestamp(timestamp, tz).strftime('%Y-%m-%d %H:%M:%S')
 
 
-def get_open_graph_info(id, url, script_dir):
+def get_open_graph_info(url):
     og_data = load_og_data()  # 加载本地存储的Open Graph数据
     # 如果数据已经缓存，直接返回缓存的数据
     if url in og_data and og_data[url]:
@@ -128,7 +128,9 @@ def get_open_graph_info(id, url, script_dir):
             og_description = soup.find('meta', property='og:description')
             og_site_name = soup.find('meta', property='og:site_name')
             og_width = soup.find('meta', property='og:image:width')
+            og_width = og_width if og_width else soup.find('meta', property='og:width')
             og_height = soup.find('meta', property='og:image:height')
+            og_height = og_height if og_height else soup.find('meta', property='og:height')
             og_url = soup.find('meta', property='og:url')
             if og_image and og_image['content'].startswith('//'):
                 img_url = f'{parsed_url.scheme}:{og_image["content"]}'
@@ -174,7 +176,7 @@ def parse_messages(id, raw_messages, tz, script_dir):
         og_info = None
         og_width, og_height = None, None
         if links and not msg_file:  # 如果有链接且没有文件
-            og_info = get_open_graph_info(id, links[0], script_dir)  # 获取第一个链接的Open Graph信息
+            og_info = get_open_graph_info(links[0], script_dir)  # 获取第一个链接的Open Graph信息
             if og_info:
                 og_width, og_height = og_info.get('width', None), og_info.get('height', None)
         display_width, display_height = calculate_telegram_image_display(msg_file_name, og_width, og_height)
@@ -258,7 +260,7 @@ def update_og_info(db_path, chat_id):
             continue
 
         try:
-            og_info = get_open_graph_info(chat_id, links[0], script_dir)
+            og_info = get_open_graph_info(links[0], script_dir)
             og_info_json = json.dumps(og_info, ensure_ascii=False)
             cursor.execute(update_sql, (og_info_json, chat_id, msg_id))
         except Exception as e:
