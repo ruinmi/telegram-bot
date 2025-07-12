@@ -119,6 +119,11 @@ def get_messages(chat_id):
                 item['og_info'] = json.loads(item['og_info'])
             except Exception:
                 item['og_info'] = None
+        if item.get('msg_files'):
+            try:
+                item['msg_files'] = json.loads(item['msg_files'])
+            except Exception:
+                item['msg_files'] = None
         messages.append(item)
     conn.close()
     return jsonify({'total': total, 'offset': offset, 'messages': messages})

@@ -5,7 +5,6 @@ from update_messages import export_chat, download
 from PIL import Image
 import os
 import re
-from jinja2 import Environment, FileSystemLoader
 import requests
 from bs4 import BeautifulSoup
 from hashlib import md5
@@ -164,14 +163,14 @@ def get_open_graph_info(url):
 
 def parse_messages(id, raw_messages, tz, script_dir):
     messages = []
+    group_messages = []
+    last_group_id = None
     for raw_message in raw_messages:
         msg_text = raw_message.get("text", "")
         links = re.findall(r'(https?://\S+)', msg_text)
         msg_id = raw_message.get("id", None)
         msg_file = raw_message.get("file", "")
         msg_file_name = f'downloads/{id}/{id}_{msg_id}_{msg_file}' if msg_file != "" else ""
-        if msg_file_name != "" and not os.path.exists(os.path.join(script_dir, msg_file_name)):
-            msg_file_name = ""
         # 获取链接的Open Graph信息
         og_info = None
         og_width, og_height = None, None
@@ -187,19 +186,93 @@ def parse_messages(id, raw_messages, tz, script_dir):
         user_id = FROM_ID.get('UserID', None) if FROM_ID is not None else None
         user = '' if user_id is None else '我'
 
-        messages.append({
+        message = {
             'date': date,
             'timestamp': timestamp,
             'msg_id': msg_id,
             'msg_file_name': msg_file_name,
+            'msg_files': [],
             'user': user,
             'msg': msg_text,
             'display_height': display_height,
             'display_width': display_width,
             'og_info': og_info
-        })
-    # 按时间正序排列（旧的在前，新消息在后）
+        }
+        group_id = raw_data.get('GroupedID', None)
+        
+        if group_id and (group_id == last_group_id or last_group_id is None):
+            group_messages.append(message)
+            last_group_id = group_id
+        else:
+            if group_messages:
+                # 找主消息（有文字的）
+                main_msg = next((m for m in group_messages if m.get('msg')), group_messages[0])
+                # 收集文件
+                for msg in group_messages:
+                    if msg['msg_id'] != main_msg['msg_id'] and msg['msg_file_name']:
+                        main_msg['msg_files'].append(msg['msg_file_name'])
+
+                # 如果主消息本身有 msg_file_name，也放进去
+                if main_msg['msg_file_name']:
+                    main_msg['msg_files'].append(main_msg['msg_file_name'])
+                    main_msg['msg_file_name'] = ''
+
+                if len(group_messages) > 0:
+                    w, h = compute_msg_files_size(len(group_messages))
+                    for msg in group_messages:
+                        msg['display_width'] = w
+                        msg['display_height'] = h
+                    
+                messages.append(main_msg)
+
+            # 新的 group
+            group_messages = [message]
+            last_group_id = group_id
+    # 循环结束后处理最后一个 group
+    if group_messages:
+        main_msg = next((m for m in group_messages if m.get('msg')), group_messages[0])
+        for msg in group_messages:
+            if msg['msg_id'] != main_msg['msg_id'] and msg['msg_file_name']:
+                main_msg['msg_files'].append(msg['msg_file_name'])
+        if main_msg['msg_file_name']:
+            main_msg['msg_files'].append(main_msg['msg_file_name'])
+            main_msg['msg_file_name'] = ''
+
+        if len(group_messages) > 0:
+            w, h = compute_msg_files_size(len(group_messages))
+            for msg in group_messages:
+                msg['display_width'] = w
+                msg['display_height'] = h        
+        messages.append(main_msg)
+
+    print(len(messages))
+    # 排序
     return sorted(messages, key=lambda x: x['date'])
+
+
+def compute_msg_files_size(num_files, container_width=500, max_per_row=3, gap=5):
+    """
+    根据图片数量，计算 msg_files 中每张图片的宽高。
+    默认每行最多 3 张，容器宽度 500px，间距 5px
+    返回: (width, height)
+    """
+    if num_files == 0:
+        return 0, 0
+
+    # 当前行的列数（如果图片少于 max_per_row，就只用 num_files）
+    cols = min(num_files, max_per_row)
+
+    # 所有间距总宽度
+    total_gap_width = gap * (cols - 1)
+
+    # 每张图片宽度
+    width = (container_width - total_gap_width) // cols
+
+    # 如果是正方形，高度等于宽度
+    height = width
+
+    return width, height
+
 
 
 def save_messages_to_db(db_path, chat_id, messages):
@@ -216,6 +289,7 @@ def save_messages_to_db(db_path, chat_id, messages):
             display_height INTEGER,
             display_width INTEGER,
             og_info TEXT,
+            msg_files TEXT,
             PRIMARY KEY(chat_id, msg_id)
         )
     ''')
@@ -224,16 +298,18 @@ def save_messages_to_db(db_path, chat_id, messages):
         INSERT OR IGNORE INTO messages(
             chat_id, msg_id, date, timestamp,
             msg_file_name, user, msg,
-            display_height, display_width, og_info
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            display_height, display_width, og_info, msg_files
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
+
 
     data = []
     for m in messages:
         og_info = json.dumps(m['og_info'], ensure_ascii=False) if m.get('og_info') else None
+        msg_files = json.dumps(m['msg_files'], ensure_ascii=False) if m.get('msg_files') else None
         data.append((chat_id, m['msg_id'], m['date'], m['timestamp'],
                      m['msg_file_name'], m['user'], m['msg'],
-                     m['display_height'], m['display_width'], og_info))
+                     m['display_height'], m['display_width'], og_info, msg_files))
 
     conn.executemany(insert_sql, data)
     conn.commit()
@@ -336,19 +412,19 @@ def main():
         raw_messages=raw_messages
     )
 
-    data = load_json(messages_file_temp)
-    china_timezone = timezone(timedelta(hours=8))
-    raw_messages = data.get("messages", [])
-    messages = parse_messages(chat_id, raw_messages, china_timezone, script_dir)
-
-    save_messages_to_db(db_path, chat_id, messages)
-
-    # 删除临时文件
-    if os.path.exists(messages_file_temp):
-        os.remove(messages_file_temp)
     if os.path.exists(messages_file):
+        data = load_json(messages_file)
+        china_timezone = timezone(timedelta(hours=8))
+        raw_messages = data.get("messages", [])
+        messages = parse_messages(chat_id, raw_messages, china_timezone, script_dir)
+
+        save_messages_to_db(db_path, chat_id, messages)
         os.remove(messages_file)
 
+        # 删除临时文件
+    if os.path.exists(messages_file_temp):
+        os.remove(messages_file_temp)
+        
     print(f"Messages data saved to {db_path}")
 
 

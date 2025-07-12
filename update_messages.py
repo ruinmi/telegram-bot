@@ -46,7 +46,8 @@ def export_chat(their_id, messages_file, messages_file_temp, download_files=True
             download_path = os.path.join(script_dir, 'downloads', their_id)
             if not os.path.exists(download_path):
                 os.makedirs(download_path)
-            download_command = ['tdl', 'dl', '-f', messages_file_temp, '-d', download_path, '--skip-same', '-t', '2', '-l', '2']
+            download_command = ['tdl', 'dl', '-f', messages_file_temp, '-d', download_path, '--skip-same', '--restart', '-t', '8', '-l', '4']
+            logging.info(f"Running download command: {' '.join(download_command)}")
             download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
             if download_result.returncode != 0:
                 logging.error(f"Error downloading files: {download_result.stderr}")
@@ -75,7 +76,7 @@ def export_chat(their_id, messages_file, messages_file_temp, download_files=True
         with open(last_export_time_file, 'w') as file:
             file.write(current_time)
     else:
-        logging.error(f"Error exporting chat: {result.stderr}")
+        logging.error(f"Error exporting chat: {result.stdout}")
 
 def download(url, their_id):
     download_path = os.path.join(script_dir, 'downloads', their_id)
