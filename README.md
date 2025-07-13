@@ -58,6 +58,7 @@ BOT_PASSWORD=你的密码 python server.py
 服务器默认只监听本机的 `127.0.0.1`，并启用基本认证。访问
 `http://localhost:5000/chat/<user_id>` 时浏览器会询问用户名和密码，默
 认用户名为 `user`，密码由 `BOT_PASSWORD` 环境变量指定。
+启动服务器后，也可以访问根地址 `/`，在网页表单中填写聊天 ID、备注，并选择是否下载文件、导出全部消息及原始数据来新增聊天记录。这些设置会保存到 `chats.json`，重启后仍会生效。服务器启动时会自动读取 `chats.json`，并为其中的每个聊天启动后台导出线程。
 
 静态文件会从根路径提供，例如 `http://localhost:5000/resources/bg.png`、
 `http://localhost:5000/fonts/Roboto-Regular.ttf` 和 `/downloads/<user_id>/...`。

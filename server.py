@@ -3,12 +3,64 @@ import os
 import json
 import logging
 import sqlite3
+import subprocess
+from threading import Thread
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, render_template, Response, abort
 from werkzeug.utils import safe_join
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_url_path='', static_folder=script_dir, template_folder=script_dir)
+
+CHATS_FILE = os.path.join(script_dir, 'chats.json')
+
+def load_chats():
+    if os.path.exists(CHATS_FILE):
+        try:
+            with open(CHATS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f'Error reading {CHATS_FILE}: {e}')
+    return []
+
+def save_chats(chats):
+    try:
+        with open(CHATS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(chats, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        logger.error(f'Error writing {CHATS_FILE}: {e}')
+
+def start_chat_worker(chat):
+    chat_id = chat.get('id')
+    remark = chat.get('remark')
+    download_files = chat.get('download_files', True)
+    all_messages = chat.get('all_messages', True)
+    raw_messages = chat.get('raw_messages', True)
+
+    def worker():
+        cmd = ['python', os.path.join(script_dir, 'main.py'), chat_id]
+        if remark:
+            cmd += ['--remark', remark]
+        if not download_files:
+            cmd.append('--ndf')
+        if not all_messages:
+            cmd.append('--nam')
+        if not raw_messages:
+            cmd.append('--nrm')
+        try:
+            subprocess.run(cmd, check=True)
+        except Exception as e:
+            logger.error(f'Error exporting chat {chat_id}: {e}')
+
+    Thread(target=worker, daemon=True).start()
+
+def start_saved_chat_workers():
+    for chat in load_chats():
+        if chat.get('id'):
+            start_chat_worker(chat)
+
+# Start workers immediately when the server module is imported
+start_saved_chat_workers()
 
 USERNAME = os.environ.get('BOT_USERNAME', 'user')
 PASSWORD = os.environ.get('BOT_PASSWORD')
@@ -32,6 +84,11 @@ def requires_auth(f):
                 return authenticate()
         return f(*args, **kwargs)
     return decorated
+
+@app.route('/')
+@requires_auth
+def index_page():
+    return render_template('index.html')
 
 @app.route('/resources/<path:filename>')
 @requires_auth
@@ -73,24 +130,37 @@ def chat_page(chat_id):
 @app.route('/chats')
 @requires_auth
 def list_chats():
-    data_dir = os.path.join(script_dir, 'data')
-    if not os.path.isdir(data_dir):
-        return jsonify({'chats': []})
-    chats = []
-    for name in os.listdir(data_dir):
-        if not os.path.isdir(os.path.join(data_dir, name)):
-            continue
-        remark = None
-        info_file = os.path.join(data_dir, name, 'info.json')
-        if os.path.exists(info_file):
-            try:
-                with open(info_file, 'r', encoding='utf-8') as f:
-                    info = json.load(f)
-                remark = info.get('remark')
-            except Exception as e:
-                logger.error(f'Error reading {info_file}: {e}')
-        chats.append({'id': name, 'remark': remark})
-    return jsonify({'chats': chats})
+    return jsonify({'chats': load_chats()})
+
+@app.route('/add_chat', methods=['POST'])
+@requires_auth
+def add_chat():
+    data = request.get_json(force=True)
+    chat_id = str(data.get('chat_id', '')).strip()
+    remark = data.get('remark')
+    download_files = bool(data.get('download_files', True))
+    all_messages = bool(data.get('all_messages', True))
+    raw_messages = bool(data.get('raw_messages', True))
+    if not chat_id:
+        return jsonify({'error': 'chat_id required'}), 400
+
+    chats = load_chats()
+    existing = next((c for c in chats if c.get('id') == chat_id), None)
+    chat_item = {
+        'id': chat_id,
+        'remark': remark,
+        'download_files': download_files,
+        'all_messages': all_messages,
+        'raw_messages': raw_messages
+    }
+    if existing:
+        existing.update(chat_item)
+    else:
+        chats.append(chat_item)
+    save_chats(chats)
+
+    start_chat_worker(chat_item)
+    return jsonify({'message': 'chat export started'})
 
 @app.route('/messages/<chat_id>')
 @requires_auth
