@@ -1,6 +1,6 @@
 import os
 import json
-import logging
+from project_logger import get_logger
 from db_utils import get_connection, get_db_path
 import sqlite3
 import time
@@ -58,8 +58,7 @@ USERNAME = os.environ.get('BOT_USERNAME', 'user')
 PASSWORD = os.environ.get('BOT_PASSWORD')
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+logger = get_logger('server')
 
 def check_auth(auth):
     return auth and auth.username == USERNAME and PASSWORD and auth.password == PASSWORD
@@ -275,9 +274,9 @@ if __name__ == '__main__':
     system = platform.system()
     if system == 'Windows':
         from waitress import serve
-        print(f"Running on http://{host}:{port} (Windows via waitress)")
+        logger.info(f"Running on http://{host}:{port} (Windows via waitress)")
         serve(app, host=host, port=port)
     else:
         # Linux 开发环境（非生产）
-        print(f"Running on http://{host}:{port} (Linux dev mode)")
+        logger.info(f"Running on http://{host}:{port} (Linux dev mode)")
         app.run(host=host, port=port)

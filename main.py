@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone, timedelta
 from update_messages import export_chat, download
+from project_logger import get_logger
 from PIL import Image
 import os
 import re
@@ -154,13 +155,15 @@ def get_open_graph_info(url):
             save_og_data(og_data)
             return None
     except requests.RequestException as e:
-        print(f'error og:{e}')
+        logger = get_logger()
+        logger.error(f'error og:{e}')
         og_data[url] = {}
         save_og_data(og_data)
         return None
 
 
-def parse_messages(id, raw_messages, tz, script_dir):
+def parse_messages(id, raw_messages, tz, script_dir, remark=None):
+    logger = get_logger(remark or id)
     messages = []
     group_messages = []
     last_group_id = None
@@ -244,7 +247,7 @@ def parse_messages(id, raw_messages, tz, script_dir):
                 msg['display_height'] = h        
         messages.append(main_msg)
 
-    print(len(messages))
+    logger.info(len(messages))
     # 排序
     return sorted(messages, key=lambda x: x['date'])
 
@@ -297,14 +300,15 @@ def handle(chat_id, is_download, is_all, is_raw, remark):
         conn,
         is_download=is_download,
         is_all=is_all,
-        is_raw=is_raw
+        is_raw=is_raw,
+        remark=remark
     )
 
     if os.path.exists(msg_json_path):
         data = load_json(msg_json_path)
         china_timezone = timezone(timedelta(hours=8))
         messages_data = data.get("messages", [])
-        messages = parse_messages(chat_id, messages_data, china_timezone, script_dir)
+        messages = parse_messages(chat_id, messages_data, china_timezone, script_dir, remark)
 
         save_messages(conn, chat_id, messages)
         os.remove(msg_json_path)
@@ -314,4 +318,5 @@ def handle(chat_id, is_download, is_all, is_raw, remark):
         os.remove(msg_json_temp_path)
     conn.close()
 
-    print(f"Messages data saved to {db_path}")
+    logger = get_logger(remark or chat_id)
+    logger.info(f"Messages data saved to {db_path}")
