@@ -1,6 +1,7 @@
 import os
 import json
 import logging
+from db_utils import get_connection, get_db_path
 import sqlite3
 import time
 from threading import Thread
@@ -104,16 +105,12 @@ def downloads_files(filename):
     if not os.path.isfile(full_path):
         abort(404)
     return send_from_directory(os.path.join(script_dir, 'downloads'), filename)
-
 def get_db(chat_id):
-    db_path = os.path.join(script_dir, 'data', chat_id, 'messages.db')
+    db_path = get_db_path(chat_id)
     if not os.path.exists(db_path):
         return None
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
+    conn = get_connection(chat_id, sqlite3.Row)
     return conn
-
-@app.route('/chat/<chat_id>')
 @requires_auth
 def chat_page(chat_id):
     return render_template('template.html', chat_id=chat_id)

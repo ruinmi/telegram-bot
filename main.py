@@ -9,7 +9,7 @@ import requests
 from bs4 import BeautifulSoup
 from hashlib import md5
 from urllib.parse import urlparse
-import sqlite3
+from db_utils import get_connection, save_messages, update_og_info
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -275,76 +275,6 @@ def compute_msg_files_size(num_files, container_width=500, max_per_row=3, gap=5)
 
 
 
-def save_messages_to_db(db_path, chat_id, messages):
-    conn = sqlite3.connect(db_path)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS messages(
-            chat_id TEXT,
-            msg_id INTEGER,
-            date TEXT,
-            timestamp INTEGER,
-            msg_file_name TEXT,
-            user TEXT,
-            msg TEXT,
-            display_height INTEGER,
-            display_width INTEGER,
-            og_info TEXT,
-            msg_files TEXT,
-            PRIMARY KEY(chat_id, msg_id)
-        )
-    ''')
-
-    insert_sql = '''
-        INSERT OR IGNORE INTO messages(
-            chat_id, msg_id, date, timestamp,
-            msg_file_name, user, msg,
-            display_height, display_width, og_info, msg_files
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    '''
-
-
-    data = []
-    for m in messages:
-        og_info = json.dumps(m['og_info'], ensure_ascii=False) if m.get('og_info') else None
-        msg_files = json.dumps(m['msg_files'], ensure_ascii=False) if m.get('msg_files') else None
-        data.append((chat_id, m['msg_id'], m['date'], m['timestamp'],
-                     m['msg_file_name'], m['user'], m['msg'],
-                     m['display_height'], m['display_width'], og_info, msg_files))
-
-    conn.executemany(insert_sql, data)
-    conn.commit()
-    conn.close()
-
-
-def update_og_info(db_path, chat_id):
-    conn = sqlite3.connect(db_path)
-    cursor = conn.cursor()
-    
-    # 获取该 chat_id 的所有消息
-    cursor.execute('SELECT msg_id, msg FROM messages WHERE chat_id = ?', (chat_id,))
-    rows = cursor.fetchall()
-    update_sql = '''
-        UPDATE messages
-        SET og_info = ?
-        WHERE chat_id = ? AND msg_id = ?
-    '''
-    for msg_id, msg in rows:
-        if not msg:
-            continue
-        links = re.findall(r'(https?://\S+)', msg)
-        if not links:
-            continue
-
-        try:
-            og_info = get_open_graph_info(links[0], script_dir)
-            og_info_json = json.dumps(og_info, ensure_ascii=False)
-            cursor.execute(update_sql, (og_info_json, chat_id, msg_id))
-        except Exception as e:
-            print(f"处理 msg_id={msg_id} 出错: {e}")
-
-    conn.commit()
-    conn.close()
-
 
 def handle(chat_id, is_download, is_all, is_raw, remark):
     # 获取脚本所在的目录
@@ -355,6 +285,7 @@ def handle(chat_id, is_download, is_all, is_raw, remark):
     msg_json_temp_path = os.path.join(data_dir, f'{chat_id}_chat_temp.json')
     db_path = os.path.join(data_dir, 'messages.db')
 
+    conn = get_connection(chat_id)
     if remark:
         info_file = os.path.join(data_dir, 'info.json')
         with open(info_file, 'w', encoding='utf-8') as f:
@@ -364,6 +295,7 @@ def handle(chat_id, is_download, is_all, is_raw, remark):
         chat_id,
         msg_json_path,
         msg_json_temp_path,
+        conn,
         is_download=is_download,
         is_all=is_all,
         is_raw=is_raw
@@ -375,12 +307,13 @@ def handle(chat_id, is_download, is_all, is_raw, remark):
         messages_data = data.get("messages", [])
         messages = parse_messages(chat_id, messages_data, china_timezone, script_dir)
 
-        save_messages_to_db(db_path, chat_id, messages)
+        save_messages(conn, chat_id, messages)
         os.remove(msg_json_path)
 
         # 删除临时文件
     if os.path.exists(msg_json_temp_path):
         os.remove(msg_json_temp_path)
+    conn.close()
 
     print(f"Messages data saved to {db_path}")
 
@@ -418,9 +351,10 @@ def main():
     messages_file = os.path.join(data_dir, f'{chat_id}_chat.json')
     messages_file_temp = os.path.join(data_dir, f'{chat_id}_chat_temp.json')
     db_path = os.path.join(data_dir, 'messages.db')
+    conn = get_connection(chat_id)
 
     if '--og-update' in sys.argv:
-        update_og_info(db_path, chat_id)
+        update_og_info(conn, chat_id, get_open_graph_info)
         return
 
     # 迁移旧的 messages.json 数据
@@ -431,7 +365,7 @@ def main():
                 old_msgs = json.load(f)
             if isinstance(old_msgs, dict):
                 old_msgs = old_msgs.get('messages', [])
-            save_messages_to_db(db_path, chat_id, old_msgs)
+            save_messages(conn, chat_id, old_msgs)
             os.remove(old_json)
         except Exception as e:
             print(f"Failed to migrate old JSON data: {e}")
@@ -445,6 +379,7 @@ def main():
         chat_id,
         messages_file,
         messages_file_temp,
+        conn,
         download_files=download_files,
         all_messages=all_messages,
         raw_messages=raw_messages
@@ -456,12 +391,13 @@ def main():
         raw_messages = data.get("messages", [])
         messages = parse_messages(chat_id, raw_messages, china_timezone, script_dir)
 
-        save_messages_to_db(db_path, chat_id, messages)
+        save_messages(conn, chat_id, messages)
         os.remove(messages_file)
 
         # 删除临时文件
     if os.path.exists(messages_file_temp):
         os.remove(messages_file_temp)
+    conn.close()
         
     print(f"Messages data saved to {db_path}")
 

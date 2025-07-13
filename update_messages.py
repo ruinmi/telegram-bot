@@ -7,24 +7,17 @@ import uuid
 import requests
 import urllib
 import threading
+from db_utils import get_last_export_time, set_last_export_time
 
 tdl_lock = threading.Lock()
 script_dir = os.path.dirname(os.path.abspath(__file__))
 log_file = os.path.join(script_dir, "update_messages.log")
 logging.basicConfig(filename=log_file, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
-def export_chat(their_id, msg_json_path, msg_json_temp_path, is_download=True, is_all=True, is_raw=True):
+def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=True, is_all=True, is_raw=True):
     logging.info("Starting chat export...")
-    # Load the last export time if it exists
-    last_export_time_file = os.path.join(script_dir, 'data', their_id, 'last_export_time')
-    if os.path.exists(last_export_time_file):
-        with open(last_export_time_file, 'r') as file:
-            last_export_time = file.read().strip()
-    else:
-        last_export_time = '0'  # Unix epoch start time
-    
+    last_export_time = get_last_export_time(conn)
     current_time = str(int(time.time()))
-    
     command = [
         'tdl', 'chat', 'export',
         '-c', str(their_id),
@@ -78,10 +71,8 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, is_download=True, i
         # Save the combined messages back to the file
         with open(msg_json_path, 'w', encoding='utf-8') as file:
             json.dump(existing_data, file, ensure_ascii=False, indent=4)
-        
         # Save the current time as the last export time
-        with open(last_export_time_file, 'w') as file:
-            file.write(current_time)
+        set_last_export_time(conn, current_time)
     else:
         logging.error(f"Error exporting chat: {result.stdout}")
 
