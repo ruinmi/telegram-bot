@@ -13,7 +13,11 @@ from main import handle
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_url_path='', static_folder=script_dir, template_folder=script_dir)
+USERNAME = os.environ.get('BOT_USERNAME', 'user')
+PASSWORD = os.environ.get('BOT_PASSWORD')
 
+# 配置日志
+logger = get_logger('server')
 CHATS_FILE = os.path.join(script_dir, 'chats.json')
 WORKERS_FLAG = os.path.join(script_dir, 'workers_started.flag')
 
@@ -71,12 +75,6 @@ def start_saved_chat_workers():
     return True
 
 # Workers are started manually via API
-
-USERNAME = os.environ.get('BOT_USERNAME', 'user')
-PASSWORD = os.environ.get('BOT_PASSWORD')
-
-# 配置日志
-logger = get_logger('server')
 
 def check_auth(auth):
     return auth and auth.username == USERNAME and PASSWORD and auth.password == PASSWORD
@@ -141,6 +139,8 @@ def get_db(chat_id):
         return None
     conn = get_connection(chat_id, sqlite3.Row)
     return conn
+
+@app.route('/chat/<chat_id>')
 @requires_auth
 def chat_page(chat_id):
     return render_template('template.html', chat_id=chat_id)
