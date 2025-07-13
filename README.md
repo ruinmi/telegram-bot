@@ -6,6 +6,11 @@
 1. 导出Telegram聊天记录并写入SQLite数据库。
 2. 将保存到数据库中的聊天记录生成HTML文件，并通过简单的服务器进行浏览和搜索。
 
+<img width="1148" height="707" alt="image" src="https://github.com/user-attachments/assets/a9228a08-dc01-4285-a663-1d1d1732c1d2" />
+<img width="877" height="1251" alt="image" src="https://github.com/user-attachments/assets/712303e8-6fcc-4cf4-a21f-8096524e3a9d" />
+<img width="959" height="286" alt="image" src="https://github.com/user-attachments/assets/bac5e773-ade3-417d-9255-aa5704873aeb" />
+
+
 ## 文件说明
 
 - `update_messages.py`：负责导出Telegram聊天记录。
