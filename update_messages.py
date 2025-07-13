@@ -1,6 +1,6 @@
 import os
 import subprocess
-import logging
+from project_logger import get_logger
 import time
 import json
 import uuid
@@ -11,11 +11,10 @@ from db_utils import get_last_export_time, set_last_export_time
 
 tdl_lock = threading.Lock()
 script_dir = os.path.dirname(os.path.abspath(__file__))
-log_file = os.path.join(script_dir, "update_messages.log")
-logging.basicConfig(filename=log_file, level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=True, is_all=True, is_raw=True):
-    logging.info("Starting chat export...")
+
+def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=True, is_all=True, is_raw=True, remark=None):
+    logger = get_logger(remark or their_id)
+    logger.info("Starting chat export...")
     last_export_time = get_last_export_time(conn)
     current_time = str(int(time.time()))
     command = [
@@ -31,28 +30,28 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
         command.append('--all')
 
 
-    logging.info(f"Running command: {' '.join(command)}")
+    logger.info(f"Running command: {' '.join(command)}")
 
     with tdl_lock:
         result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
     
     if result.returncode == 0:
-        logging.info("Chat export successful.")
+        logger.info("Chat export successful.")
         
         # New: Download chat files using tdl dl command
         if is_download:
-            logging.info("Downloading files...")
+            logger.info("Downloading files...")
             download_path = os.path.join(script_dir, 'downloads', their_id)
             if not os.path.exists(download_path):
                 os.makedirs(download_path)
             download_command = ['tdl', 'dl', '-f', msg_json_temp_path, '-d', download_path, '--skip-same', '--restart', '-t', '8', '-l', '4']
-            logging.info(f"Running download command: {' '.join(download_command)}")
+            logger.info(f"Running download command: {' '.join(download_command)}")
             with tdl_lock:
                 download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
             if download_result.returncode != 0:
-                logging.error(f"Error downloading files: {download_result.stderr}")
+                logger.error(f"Error downloading files: {download_result.stderr}")
             else:
-                logging.info("Download successful.")
+                logger.info("Download successful.")
         
         # Load existing messages if the file exists
         if os.path.exists(msg_json_path):
@@ -74,9 +73,10 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
         # Save the current time as the last export time
         set_last_export_time(conn, current_time)
     else:
-        logging.error(f"Error exporting chat: {result.stdout}")
+        logger.error(f"Error exporting chat: {result.stdout}")
 
-def download(url, their_id):
+def download(url, their_id, remark=None):
+    logger = get_logger(remark or their_id)
     download_path = os.path.join(script_dir, 'downloads', their_id)
     if not os.path.exists(download_path):
         os.makedirs(download_path)
@@ -92,5 +92,5 @@ def download(url, their_id):
             f.write(response.content)
         return full_save_path
     else:
-        print("下载失败，状态码:", response.status_code)
+        logger.error(f"下载失败，状态码: {response.status_code}")
         return None

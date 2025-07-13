@@ -65,7 +65,7 @@ BOT_PASSWORD=你的密码 python server.py
 
 ## 日志文件
 
-导出聊天记录的日志会保存在`update_messages.log`文件中，方便排查问题。
+所有操作的日志都会写入`logs/project.log`文件，方便排查问题。
 
 ## 注意事项
 
