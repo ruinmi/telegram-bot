@@ -4,8 +4,9 @@ Description=Telegram Bot
 After=network.target
 
 [Service]
-WorkingDirectory=/path/to/chat_app
+WorkingDirectory=/telegram-bot
 ExecStart=/usr/bin/env bash run.sh
+ExecStop=/usr/bin/env bash -c 'rm -f /telegram-bot/workers_started.flag'
 Restart=always
 User=www-data
 Environment=BOT_USERNAME=admin

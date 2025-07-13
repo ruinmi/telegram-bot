@@ -18,7 +18,7 @@ class RemarkAdapter(logging.LoggerAdapter):
     def process(self, msg, kwargs):
         remark = self.extra.get('remark')
         prefix = f'[{remark}] ' if remark else ''
-        return prefix + msg, kwargs
+        return str(prefix) + str(msg), kwargs
 
 def get_logger(remark=None):
     base_logger = logging.getLogger('telegram_bot')

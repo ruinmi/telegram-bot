@@ -1,5 +1,7 @@
 import os
 import json
+import subprocess
+
 from project_logger import get_logger
 from db_utils import get_connection, get_db_path
 import sqlite3
@@ -57,22 +59,58 @@ def start_chat_worker(chat, interval=1800):
     is_download = chat.get('download_files', True)
     is_all = chat.get('all_messages', True)
     is_raw = chat.get('raw_messages', True)
-
+    
+    if not workers_started():
+        logger.info(f'Worker {remark} will not start')
+        return
+    
     def worker():
         while True:
             handle(chat_id, is_download, is_all, is_raw, remark)
             time.sleep(interval)
 
+    logger.info(f'Worker {remark} will start')
     Thread(target=worker, daemon=True).start()
 
 def start_saved_chat_workers():
     if workers_started():
         return False
+    mark_workers_started()
     for chat in load_chats():
         if chat.get('id'):
             start_chat_worker(chat)
-    mark_workers_started()
     return True
+
+
+def find_chat(info: str) -> tuple[str, str] | None:
+    """
+    根据 id（纯数字字符串）或 username（字符串），返回 (id, visibleName)
+    """
+    try:
+        # 判断 info 是否为纯数字
+        if info.isdigit():
+            # 过滤器用 expr 引擎
+            filter_str = f"ID == '{info}'"
+        else:
+            filter_str = f"Username == '{info}'"
+
+        # 调用 tdl 命令
+        cmd = ["tdl", "chat", "ls", "-o", "json", "-f", filter_str]
+        output = subprocess.check_output(cmd, encoding="utf-8")
+        chats = json.loads(output)
+
+        if not chats:
+            return None
+
+        chat = chats[0]
+        return str(chat["id"]), chat.get("visible_name", "")
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f"命令执行错误: {e}")
+        return None
+    except Exception as e:
+        logger.error(f"解析错误: {e}")
+        return None
 
 # Workers are started manually via API
 
@@ -155,7 +193,9 @@ def list_chats():
 def add_chat():
     data = request.get_json(force=True)
     chat_id = str(data.get('chat_id', '')).strip()
-    remark = data.get('remark')
+    chat_id, remark = find_chat(chat_id)
+    if data.get('remark', ''):
+        remark = data.get('remark')
     download_files = bool(data.get('download_files', True))
     all_messages = bool(data.get('all_messages', True))
     raw_messages = bool(data.get('raw_messages', True))
@@ -294,6 +334,47 @@ def not_found(e):
 @app.errorhandler(500)
 def server_error(e):
     return jsonify({'error': 'Server error'}), 500
+
+@app.route('/execute_sql', methods=['POST'])
+@requires_auth
+def execute_sql():
+    data = request.get_json(force=True)
+    chat_id = data.get("chat_id", "").strip()
+    sql_str = data.get("sql_str", "").strip()
+
+    if not chat_id or not sql_str:
+        return jsonify({"error": "chat_id 和 sql_str 必填"}), 400
+
+    # 安全限制，只允许 select
+    # if not sql_str.lower().startswith("select"):
+    #     return jsonify({"error": "只允许执行 SELECT 查询"}), 403
+
+    conn = get_db(chat_id)
+    if not conn:
+        return jsonify({"error": f"数据库不存在: {chat_id}"}), 404
+
+    try:
+        cur = conn.cursor()
+        # 判断是查询还是修改
+        is_select = sql_str.strip().lower().startswith("select")
+
+        cur.execute(sql_str)
+        if is_select:
+            rows = cur.fetchall()
+            columns = [desc[0] for desc in cur.description]
+            results = [dict(zip(columns, row)) for row in rows]
+            conn.commit()
+            return jsonify({"results": results})
+        else:
+            # 如果是修改、插入、或表结构变更，返回影响行数
+            affected = cur.rowcount
+            conn.commit()
+            return jsonify({"message": "SQL 执行成功", "affected_rows": affected})
+    except sqlite3.Error as e:
+        return jsonify({"error": str(e)}), 500
+    finally:
+        conn.close()
+
 
 if __name__ == '__main__':
     import platform

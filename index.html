@@ -1,6 +1,7 @@
 <html>
+
 <head>
-  <meta charset="utf-8"/>
+  <meta charset="utf-8" />
   <title>聊天频道管理</title>
   <style>
       body {
@@ -9,12 +10,15 @@
           background: #000;
           color: #fff;
       }
+
       input[type="number"]::-webkit-inner-spin-button,
       input[type="number"]::-webkit-outer-spin-button {
           -webkit-appearance: none;
           margin: 0;
       }
-      input, button {
+
+      input,
+      button {
           padding: 6px;
           margin: 4px;
           background: #020202;
@@ -35,21 +39,57 @@
       label {
           user-select: none;
       }
+
+      #startWorkers {
+          cursor: pointer;
+          transition: background 0.2s;
+      }
+
+      #startWorkers:hover:not(:disabled) {
+          background: rgb(114, 114, 114);
+      }
+
+      #startWorkers:disabled {
+          background: rgb(83, 251, 2);
+          color: #000;
+      }
+
+      a {
+          text-decoration: none;
+          color: #ff7700;
+      }
+
+      #addButton {
+          cursor: pointer;
+          transition: background 0.2s;
+      }
+
+      #addButton:hover {
+          background: #333333;
+      }
   </style>
 </head>
+
 <body>
 <h1>聊天频道管理</h1>
 <button id="startWorkers">启动Workers</button>
 <form id="addForm">
-  <input type="number" id="chatId" placeholder="聊天ID" required/>
-  <input type="text" id="remark" placeholder="备注(可选)"/>
-  <label><input type="checkbox" id="downloadFiles" checked/>下载附件</label>
-  <label><input type="checkbox" id="allMessages" checked/>导出全部消息</label>
-  <label><input type="checkbox" id="rawMessages" checked/>导出原始数据</label>
-  <button type="submit">添加</button>
+  <input type="text" id="chatId" placeholder="聊天ID" required />
+  <input type="text" id="remark" placeholder="备注(可选)" />
+  <label><input type="checkbox" id="downloadFiles" checked />下载附件</label>
+  <label><input type="checkbox" id="allMessages" checked />导出全部消息</label>
+  <label><input type="checkbox" id="rawMessages" checked />导出原始数据</label>
+  <button id="addButton" type="submit">添加</button>
 </form>
 <ul id="chatList"></ul>
+
+<textarea id="sql_str" rows="5" cols="60" placeholder="写 SQL..."></textarea><br>
+<button onclick="executeSQL()">执行 SQL</button>
+
+<pre id="sqlResult"></pre>
 <script>
+    let selectedChatId = null;
+
     function loadChats() {
         fetch('/chats')
             .then(r => r.json())
@@ -58,10 +98,26 @@
                 ul.innerHTML = '';
                 data.chats.forEach(chat => {
                     const li = document.createElement('li');
+
+                    const radio = document.createElement('input');
+                    radio.type = 'radio';
+                    radio.name = 'chatSelect';
+                    radio.value = chat.id;
+
+                    radio.addEventListener('change', () => {
+                        selectedChatId = chat.id;
+                        console.log("选中 chat_id:", selectedChatId);
+                    });
+
+                    const label = document.createElement('label');
+                    label.prepend(radio);
+                    
                     const a = document.createElement('a');
                     a.href = '/chat/' + encodeURIComponent(chat.id);
                     a.textContent = chat.remark || chat.id;
-                    li.appendChild(a);
+
+                    label.appendChild(a);
+                    li.appendChild(label);
                     ul.appendChild(li);
                 });
             });
@@ -77,7 +133,7 @@
         if (!id) return;
         fetch('/add_chat', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'},
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 chat_id: id,
                 remark: remark,
@@ -112,7 +168,7 @@
     }
 
     document.getElementById('startWorkers').addEventListener('click', () => {
-        fetch('/start_workers', {method: 'POST'})
+        fetch('/start_workers', { method: 'POST' })
             .then(() => checkWorkers());
     });
 
@@ -121,5 +177,27 @@
         checkWorkers();
     });
 </script>
+
+<script>
+    async function executeSQL() {
+        if (!selectedChatId) {
+            alert("请先选择一个 Chat ID！");
+            return;
+        }
+
+        const sqlStr = document.getElementById("sql_str").value;
+        const res = await fetch('/execute_sql', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: selectedChatId,
+                sql_str: sqlStr
+            })
+        });
+        const data = await res.json();
+        document.getElementById("sqlResult").innerText = JSON.stringify(data, null, 2);
+    }
+</script>
 </body>
+
 </html>

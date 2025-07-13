@@ -608,6 +608,15 @@
                     window.scrollTo(0, document.body.scrollHeight);
                 });
             });
+
+            function checkAndLoadIfNotScrollable() {
+                if (!isSearching && oldestIndex > 0 && document.body.scrollHeight <= window.innerHeight + 100) {
+                    loadOlderMessagesWithScrollAdjustment();
+                }
+            }
+
+            // 页面初始化或每次加载完消息后都检查
+            checkAndLoadIfNotScrollable();
         }
 
         function waitForMediaToLoad() {

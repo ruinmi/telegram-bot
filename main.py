@@ -156,7 +156,7 @@ def get_open_graph_info(url):
             return None
     except requests.RequestException as e:
         logger = get_logger()
-        logger.error(f'error og:{e}')
+        logger.exception(f'error og:{e}')
         og_data[url] = {}
         save_og_data(og_data)
         return None
@@ -247,7 +247,6 @@ def parse_messages(id, raw_messages, tz, script_dir, remark=None):
                 msg['display_height'] = h        
         messages.append(main_msg)
 
-    logger.info(len(messages))
     # 排序
     return sorted(messages, key=lambda x: x['date'])
 
@@ -276,9 +275,8 @@ def compute_msg_files_size(num_files, container_width=500, max_per_row=3, gap=5)
     return width, height
 
 
-
-
 def handle(chat_id, is_download, is_all, is_raw, remark):
+    logger = get_logger(remark or chat_id)
     # 获取脚本所在的目录
     data_dir = str(os.path.join(script_dir, 'data', chat_id))
     if not os.path.exists(data_dir):
@@ -287,36 +285,34 @@ def handle(chat_id, is_download, is_all, is_raw, remark):
     msg_json_temp_path = os.path.join(data_dir, f'{chat_id}_chat_temp.json')
     db_path = os.path.join(data_dir, 'messages.db')
 
-    conn = get_connection(chat_id)
-    if remark:
-        info_file = os.path.join(data_dir, 'info.json')
-        with open(info_file, 'w', encoding='utf-8') as f:
-            json.dump({'remark': remark}, f, ensure_ascii=False, indent=2)
+    with get_connection(chat_id) as conn:
+        try:
+            export_chat(
+                chat_id,
+                msg_json_path,
+                msg_json_temp_path,
+                conn,
+                is_download=is_download,
+                is_all=is_all,
+                is_raw=is_raw,
+                remark=remark
+            )
+        except Exception as e:
+            logger.exception(f'Error writing {msg_json_path}: {e}')
+    
+        if os.path.exists(msg_json_path):
+            try:
+                data = load_json(msg_json_path)
+                china_timezone = timezone(timedelta(hours=8))
+                messages_data = data.get("messages", [])
+                messages = parse_messages(chat_id, messages_data, china_timezone, script_dir, remark)
+                save_messages(conn, chat_id, messages)
+            except Exception as e:
+                logger.exception(f'Error parsing {msg_json_path}: {e}')
+            finally:
+                os.remove(msg_json_path)
+    
+        if os.path.exists(msg_json_temp_path):
+            os.remove(msg_json_temp_path)
 
-    export_chat(
-        chat_id,
-        msg_json_path,
-        msg_json_temp_path,
-        conn,
-        is_download=is_download,
-        is_all=is_all,
-        is_raw=is_raw,
-        remark=remark
-    )
-
-    if os.path.exists(msg_json_path):
-        data = load_json(msg_json_path)
-        china_timezone = timezone(timedelta(hours=8))
-        messages_data = data.get("messages", [])
-        messages = parse_messages(chat_id, messages_data, china_timezone, script_dir, remark)
-
-        save_messages(conn, chat_id, messages)
-        os.remove(msg_json_path)
-
-        # 删除临时文件
-    if os.path.exists(msg_json_temp_path):
-        os.remove(msg_json_temp_path)
-    conn.close()
-
-    logger = get_logger(remark or chat_id)
     logger.info(f"Messages data saved to {db_path}")

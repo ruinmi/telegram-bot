@@ -44,14 +44,13 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
                 download_path = os.path.join(script_dir, 'downloads', their_id)
                 if not os.path.exists(download_path):
                     os.makedirs(download_path)
-                download_command = ['tdl', 'dl', '-f', msg_json_temp_path, '-d', download_path, '--skip-same', '--restart', '-t', '8', '-l', '4']
+                download_command = ['tdl', 'dl', '-f', msg_json_temp_path, '-d', download_path, '--skip-same', '--continue', '-t', '8', '-l', '4']
                 logger.info(f"Running download command: {' '.join(download_command)}")
-                with tdl_lock:
-                    download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
-                    if download_result.returncode != 0:
-                        logger.error(f"Error downloading files: {download_result.stderr}")
-                    else:
-                        logger.info("Download successful.")
+                download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
+                if download_result.returncode != 0:
+                    logger.exception(f"Error downloading files: {download_result.stderr}")
+                else:
+                    logger.info("Download successful.")
             
             # Load existing messages if the file exists
             if os.path.exists(msg_json_path):
@@ -73,7 +72,7 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
             # Save the current time as the last export time
             set_last_export_time(conn, current_time)
         else:
-            logger.error(f"Error exporting chat: {result.stdout}")
+            logger.exception(f"Error exporting chat: {result.stdout}")
 
 def download(url, their_id, remark=None):
     logger = get_logger(remark or their_id)
@@ -92,5 +91,5 @@ def download(url, their_id, remark=None):
             f.write(response.content)
         return full_save_path
     else:
-        logger.error(f"下载失败，状态码: {response.status_code}")
+        logger.exception(f"下载失败，状态码: {response.status_code}")
         return None
