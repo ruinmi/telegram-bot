@@ -15,6 +15,21 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_url_path='', static_folder=script_dir, template_folder=script_dir)
 
 CHATS_FILE = os.path.join(script_dir, 'chats.json')
+WORKERS_FLAG = os.path.join(script_dir, 'workers_started.flag')
+
+_workers_started = False
+
+def workers_started():
+    return _workers_started or os.path.exists(WORKERS_FLAG)
+
+def mark_workers_started():
+    global _workers_started
+    _workers_started = True
+    try:
+        with open(WORKERS_FLAG, 'w', encoding='utf-8') as f:
+            f.write('started')
+    except Exception as e:
+        logger.error(f'Error writing {WORKERS_FLAG}: {e}')
 
 def load_chats():
     if os.path.exists(CHATS_FILE):
@@ -47,12 +62,15 @@ def start_chat_worker(chat, interval=1800):
     Thread(target=worker, daemon=True).start()
 
 def start_saved_chat_workers():
+    if workers_started():
+        return False
     for chat in load_chats():
         if chat.get('id'):
             start_chat_worker(chat)
+    mark_workers_started()
+    return True
 
-# Start workers immediately when the server module is imported
-start_saved_chat_workers()
+# Workers are started manually via API
 
 USERNAME = os.environ.get('BOT_USERNAME', 'user')
 PASSWORD = os.environ.get('BOT_PASSWORD')
@@ -80,6 +98,19 @@ def requires_auth(f):
 @requires_auth
 def index_page():
     return render_template('index.html')
+
+
+@app.route('/workers_status')
+@requires_auth
+def workers_status_route():
+    return jsonify({'started': workers_started()})
+
+
+@app.route('/start_workers', methods=['POST'])
+@requires_auth
+def start_workers_route():
+    started = start_saved_chat_workers()
+    return jsonify({'started': started})
 
 @app.route('/resources/<path:filename>')
 @requires_auth

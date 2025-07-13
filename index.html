@@ -39,6 +39,7 @@
 </head>
 <body>
 <h1>聊天频道管理</h1>
+<button id="startWorkers">启动Workers</button>
 <form id="addForm">
   <input type="number" id="chatId" placeholder="聊天ID" required/>
   <input type="text" id="remark" placeholder="备注(可选)"/>
@@ -95,7 +96,30 @@
                 loadChats();
             });
     });
-    document.addEventListener('DOMContentLoaded', loadChats);
+    function checkWorkers() {
+        fetch('/workers_status')
+            .then(r => r.json())
+            .then(data => {
+                const btn = document.getElementById('startWorkers');
+                if (data.started) {
+                    btn.disabled = true;
+                    btn.textContent = 'Workers 已启动';
+                } else {
+                    btn.disabled = false;
+                    btn.textContent = '启动Workers';
+                }
+            });
+    }
+
+    document.getElementById('startWorkers').addEventListener('click', () => {
+        fetch('/start_workers', {method: 'POST'})
+            .then(() => checkWorkers());
+    });
+
+    document.addEventListener('DOMContentLoaded', () => {
+        loadChats();
+        checkWorkers();
+    });
 </script>
 </body>
 </html>
