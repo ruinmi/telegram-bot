@@ -181,10 +181,10 @@ def parse_messages(id, raw_messages, tz, script_dir):
         display_width, display_height = calculate_telegram_image_display(msg_file_name, og_width, og_height)
         timestamp = raw_message.get("date", 0)
         date = convert_timestamp_to_date(timestamp, tz)
-        raw_data = raw_message.get("raw", None)
-        FROM_ID = raw_data.get("FromID", None) if raw_data is not None else None
-        user_id = FROM_ID.get('UserID', None) if FROM_ID is not None else None
-        user = '' if user_id is None else '我'
+        raw_data = raw_message.get("raw", {})
+        from_id = raw_data.get("FromID", {}) if raw_data else {}
+        user_id = from_id.get('UserID', '') if from_id else ''
+        user = '我' if user_id else ''
 
         message = {
             'date': date,
@@ -198,7 +198,7 @@ def parse_messages(id, raw_messages, tz, script_dir):
             'display_width': display_width,
             'og_info': og_info
         }
-        group_id = raw_data.get('GroupedID', None)
+        group_id = raw_data.get('GroupedID', '')
         
         if group_id and (group_id == last_group_id or last_group_id is None):
             group_messages.append(message)
@@ -345,6 +345,44 @@ def update_og_info(db_path, chat_id):
     conn.commit()
     conn.close()
 
+
+def handle(chat_id, is_download, is_all, is_raw, remark):
+    # 获取脚本所在的目录
+    data_dir = str(os.path.join(script_dir, 'data', chat_id))
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
+    msg_json_path = os.path.join(data_dir, f'{chat_id}_chat.json')
+    msg_json_temp_path = os.path.join(data_dir, f'{chat_id}_chat_temp.json')
+    db_path = os.path.join(data_dir, 'messages.db')
+
+    if remark:
+        info_file = os.path.join(data_dir, 'info.json')
+        with open(info_file, 'w', encoding='utf-8') as f:
+            json.dump({'remark': remark}, f, ensure_ascii=False, indent=2)
+
+    export_chat(
+        chat_id,
+        msg_json_path,
+        msg_json_temp_path,
+        is_download=is_download,
+        is_all=is_all,
+        is_raw=is_raw
+    )
+
+    if os.path.exists(msg_json_path):
+        data = load_json(msg_json_path)
+        china_timezone = timezone(timedelta(hours=8))
+        messages_data = data.get("messages", [])
+        messages = parse_messages(chat_id, messages_data, china_timezone, script_dir)
+
+        save_messages_to_db(db_path, chat_id, messages)
+        os.remove(msg_json_path)
+
+        # 删除临时文件
+    if os.path.exists(msg_json_temp_path):
+        os.remove(msg_json_temp_path)
+
+    print(f"Messages data saved to {db_path}")
 
 def main():
     # 检测是否需要显示帮助信息

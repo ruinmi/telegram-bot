@@ -6,12 +6,14 @@ import json
 import uuid
 import requests
 import urllib
+import threading
 
+tdl_lock = threading.Lock()
 script_dir = os.path.dirname(os.path.abspath(__file__))
 log_file = os.path.join(script_dir, "update_messages.log")
 logging.basicConfig(filename=log_file, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
-def export_chat(their_id, messages_file, messages_file_temp, download_files=True, all_messages=True, raw_messages=True):
+def export_chat(their_id, msg_json_path, msg_json_temp_path, is_download=True, is_all=True, is_raw=True):
     logging.info("Starting chat export...")
     # Load the last export time if it exists
     last_export_time_file = os.path.join(script_dir, 'data', their_id, 'last_export_time')
@@ -27,49 +29,54 @@ def export_chat(their_id, messages_file, messages_file_temp, download_files=True
         'tdl', 'chat', 'export',
         '-c', str(their_id),
         '--with-content',
-        '-o', messages_file_temp,
+        '-o', msg_json_temp_path,
         '-i', f'{last_export_time},{current_time}'
     ]
-    command.append('--raw' if raw_messages else '')
-    command.append('--all' if all_messages else '')
+    if is_raw:
+        command.append('--raw')
+    if is_all:
+        command.append('--all')
+
 
     logging.info(f"Running command: {' '.join(command)}")
-    
-    result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+
+    with tdl_lock:
+        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
     
     if result.returncode == 0:
         logging.info("Chat export successful.")
         
         # New: Download chat files using tdl dl command
-        if download_files:
+        if is_download:
             logging.info("Downloading files...")
             download_path = os.path.join(script_dir, 'downloads', their_id)
             if not os.path.exists(download_path):
                 os.makedirs(download_path)
-            download_command = ['tdl', 'dl', '-f', messages_file_temp, '-d', download_path, '--skip-same', '--restart', '-t', '8', '-l', '4']
+            download_command = ['tdl', 'dl', '-f', msg_json_temp_path, '-d', download_path, '--skip-same', '--restart', '-t', '8', '-l', '4']
             logging.info(f"Running download command: {' '.join(download_command)}")
-            download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
+            with tdl_lock:
+                download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
             if download_result.returncode != 0:
                 logging.error(f"Error downloading files: {download_result.stderr}")
             else:
                 logging.info("Download successful.")
         
         # Load existing messages if the file exists
-        if os.path.exists(messages_file):
-            with open(messages_file, 'r', encoding='utf-8') as file:
+        if os.path.exists(msg_json_path):
+            with open(msg_json_path, 'r', encoding='utf-8') as file:
                 existing_data = json.load(file)
         else:
             existing_data = {"id": their_id, "messages": []}
         
         # Load new messages from the temporary exported file
-        with open(messages_file_temp, 'r', encoding='utf-8') as file:
+        with open(msg_json_temp_path, 'r', encoding='utf-8') as file:
             new_data = json.load(file)
         
         # Append new messages to the existing messages
         existing_data['messages'].extend(new_data['messages'])
         
         # Save the combined messages back to the file
-        with open(messages_file, 'w', encoding='utf-8') as file:
+        with open(msg_json_path, 'w', encoding='utf-8') as file:
             json.dump(existing_data, file, ensure_ascii=False, indent=4)
         
         # Save the current time as the last export time

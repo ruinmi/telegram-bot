@@ -1,13 +1,14 @@
-# main.py
 import os
 import json
 import logging
 import sqlite3
-import subprocess
+import time
 from threading import Thread
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, render_template, Response, abort
 from werkzeug.utils import safe_join
+
+from main import handle
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_url_path='', static_folder=script_dir, template_folder=script_dir)
@@ -30,27 +31,17 @@ def save_chats(chats):
     except Exception as e:
         logger.error(f'Error writing {CHATS_FILE}: {e}')
 
-def start_chat_worker(chat):
+def start_chat_worker(chat, interval=1800):
     chat_id = chat.get('id')
     remark = chat.get('remark')
-    download_files = chat.get('download_files', True)
-    all_messages = chat.get('all_messages', True)
-    raw_messages = chat.get('raw_messages', True)
+    is_download = chat.get('download_files', True)
+    is_all = chat.get('all_messages', True)
+    is_raw = chat.get('raw_messages', True)
 
     def worker():
-        cmd = ['python', os.path.join(script_dir, 'main.py'), chat_id]
-        if remark:
-            cmd += ['--remark', remark]
-        if not download_files:
-            cmd.append('--ndf')
-        if not all_messages:
-            cmd.append('--nam')
-        if not raw_messages:
-            cmd.append('--nrm')
-        try:
-            subprocess.run(cmd, check=True)
-        except Exception as e:
-            logger.error(f'Error exporting chat {chat_id}: {e}')
+        while True:
+            handle(chat_id, is_download, is_all, is_raw, remark)
+            time.sleep(interval)
 
     Thread(target=worker, daemon=True).start()
 
