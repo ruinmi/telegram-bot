@@ -1,0 +1,72 @@
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>聊天频道管理</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; background: #000; color: #fff; }
+        input, button { padding: 6px; margin: 4px; }
+        ul { list-style: none; padding: 0; }
+        li { margin: 5px 0; }
+    </style>
+</head>
+<body>
+    <h1>聊天频道管理</h1>
+    <form id="addForm">
+        <input type="text" id="chatId" placeholder="聊天ID" required />
+        <input type="text" id="remark" placeholder="备注(可选)" />
+        <label><input type="checkbox" id="downloadFiles" checked />下载附件</label>
+        <label><input type="checkbox" id="allMessages" checked />导出全部消息</label>
+        <label><input type="checkbox" id="rawMessages" checked />导出原始数据</label>
+        <button type="submit">添加</button>
+    </form>
+    <ul id="chatList"></ul>
+    <script>
+        function loadChats() {
+            fetch('/chats')
+                .then(r => r.json())
+                .then(data => {
+                    const ul = document.getElementById('chatList');
+                    ul.innerHTML = '';
+                    data.chats.forEach(chat => {
+                        const li = document.createElement('li');
+                        const a = document.createElement('a');
+                        a.href = '/chat/' + encodeURIComponent(chat.id);
+                        a.textContent = chat.remark || chat.id;
+                        li.appendChild(a);
+                        ul.appendChild(li);
+                    });
+                });
+        }
+        document.getElementById('addForm').addEventListener('submit', e => {
+            e.preventDefault();
+            const id = document.getElementById('chatId').value.trim();
+            const remark = document.getElementById('remark').value.trim();
+            const download = document.getElementById('downloadFiles').checked;
+            const allMsg = document.getElementById('allMessages').checked;
+            const rawMsg = document.getElementById('rawMessages').checked;
+            if (!id) return;
+            fetch('/add_chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: id,
+                    remark: remark,
+                    download_files: download,
+                    all_messages: allMsg,
+                    raw_messages: rawMsg
+                })
+            })
+            .then(r => r.json())
+            .then(() => {
+                document.getElementById('chatId').value = '';
+                document.getElementById('remark').value = '';
+                document.getElementById('downloadFiles').checked = true;
+                document.getElementById('allMessages').checked = true;
+                document.getElementById('rawMessages').checked = true;
+                loadChats();
+            });
+        });
+        document.addEventListener('DOMContentLoaded', loadChats);
+    </script>
+</body>
+</html>
