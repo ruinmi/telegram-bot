@@ -698,7 +698,6 @@
                 .then(response => response.json())
                 .then(data => {
                     const results = data.results;
-                    totalMessages = data.total;
                     messagesContainer.innerHTML = "";
                     let fragment = document.createDocumentFragment();
                     if (results.length > 0 && results[0].index > 0) {
@@ -717,7 +716,7 @@
                         lastIndex = idx;
                     });
                     if (lastIndex !== null && lastIndex < totalMessages - 1) {
-                        fragment.appendChild(createSeparatorElement(lastIndex, totalMessages - 1, "down", searchValue));
+                        fragment.appendChild(createSeparatorElement(lastIndex, totalMessages, "down", searchValue));
                     }
                     messagesContainer.appendChild(fragment);
                 });
