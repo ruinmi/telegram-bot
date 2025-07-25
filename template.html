@@ -306,6 +306,55 @@
             -webkit-line-clamp: 7;
         }
 
+        .reply-info {
+            position: relative;
+            border-radius: .25rem;
+            overflow: hidden;
+            margin-bottom: 6px;
+            display: flex;
+            max-width: 100%;
+        }
+
+        .reply-image img {
+            width: 64px;
+            height: 64px;
+            object-fit: cover;
+            border-radius: .25rem;
+        }
+
+        .reply-content {
+            display: flex;
+            gap: 5px;
+            padding: .25rem .375rem;
+            width: 100%;
+        }
+
+        .reply-content.left {
+            background: #2b2b2b;
+        }
+
+        .reply-content.right {
+            background: rgba(118, 106, 200, 0.3);
+        }
+
+        .reply-text {
+            color: #fff;
+            font-size: 14px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            -webkit-line-clamp: 3;
+        }
+
+        .reactions {
+            margin-top: 6px;
+        }
+
+        .reactions span {
+            margin-right: 6px;
+        }
+
         #chatSelect {
             margin-left: 10px;
             min-width: 90px;
@@ -330,7 +379,7 @@
 
         @media screen and (max-width: 768px) {
             body {
-                font-size: 18px;
+                font-size: 20px;
             }
 
             body #header {
@@ -462,6 +511,12 @@
             messageContent = messageContent.replace(/\n/g, "<br/>");
             let mediaHtml = "";
             let ogHtml = "";
+            let replyHtml = "";
+            let reactionsHtml = "";
+            if (message.reply_to_msg_id) {
+                const replyId = `reply-${message.msg_id}`;
+                replyHtml = `<div class="reply-placeholder" id="${replyId}" data-reply="${message.reply_to_msg_id}" data-position="${position}"></div>`;
+            }
             if (message.msg_file_name) {
                 let lowerName = message.msg_file_name.toLowerCase();
                 if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
@@ -499,8 +554,8 @@
                 } else {
                     files = message.msg_files;
                 }
-                if (files) {
-                    let innerHtml = files.map(fileName => {
+            if (files) {
+                let innerHtml = files.map(fileName => {
                         let lowerName = fileName.toLowerCase();
                         if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
                             return `
@@ -527,9 +582,17 @@
                     }).join("\n");
 
                     // 用 images 父容器包裹
-                    mediaHtml = `<div style="display: flex">\n${innerHtml}\n</div>`;
-                }
+                mediaHtml = `<div style="display: flex">\n${innerHtml}\n</div>`;
             }
+        }
+
+        if (message.reactions) {
+            let reactions = typeof message.reactions === 'string' ? JSON.parse(message.reactions) : message.reactions;
+            if (reactions && reactions.Results && reactions.Results.length) {
+                let list = reactions.Results.map(r => `<span>${r.Reaction.Emoticon} ${r.Count}</span>`).join('');
+                reactionsHtml = `<div class="reactions">${list}</div>`;
+            }
+        }
 
 
             return `<div class="message ${position
@@ -538,14 +601,35 @@
                 }">${message.date}</div>
                             <div class="user ${position
                 }">${message.user}</div>
-                            ${mediaHtml
-                }
+                            ${replyHtml}
                             ${message.msg ? `<div class="msg">${messageContent}</div>` : ""}
-                            ${ogHtml
-                }
+                            ${mediaHtml}
+                            ${ogHtml}
+                            ${reactionsHtml}
                         </div>`;
         }
 
+function fillReplyPlaceholders(searchValue = "") {
+    document.querySelectorAll(".reply-placeholder").forEach(div => {
+        if (div.dataset.loaded) return;
+        const msgId = div.dataset.reply;
+        const pos = div.dataset.position;
+        fetch(`/messages/${chatId}/${msgId}`).then(r => r.json()).then(data => {
+            let img = "";
+            if (data.msg_file_name) {
+                const lower = data.msg_file_name.toLowerCase();
+                if (/(?:\.png|\.jpg|\.jpeg|\.gif|\.webp)$/.test(lower)) {
+                    img = `<div class="reply-image"><img src="/${data.msg_file_name}" alt="图片"></div>`;
+                }
+            }
+            let text = data.msg ? highlightText(data.msg, searchValue) : "";
+            text = text.replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>');
+            text = text.replace(/\n/g, '<br/>');
+            div.innerHTML = `<div class="reply-info"><div class="reply-content ${pos}">${img}<div class="reply-text">${text}</div></div></div>`;
+            div.dataset.loaded = "1";
+        });
+    });
+}
         // 创建可点击的分隔符元素，通过接口按需加载上下文消息
         function createSeparatorElement(startIndex, endIndex, direction, searchValue) {
             let separator = document.createElement('div');
@@ -581,6 +665,7 @@
                     while (container.firstChild) {
                         parent.insertBefore(container.firstChild, nextSibling);
                     }
+                    fillReplyPlaceholders(searchValue);
                     if (dir === "down") {
                         if (s + count < e - 1) {
                             let newSep = createSeparatorElement(s + count, e, "down", searchValue);
@@ -613,6 +698,7 @@
                 } else {
                     messagesContainer.innerHTML += html;
                 }
+                fillReplyPlaceholders();
                 resolve();
             });
         }
@@ -739,6 +825,7 @@
                             fragment.appendChild(createSeparatorElement(lastIndex, totalMessages, "down", searchValue));
                         }
                         messagesContainer.appendChild(fragment);
+                        fillReplyPlaceholders(searchValue);
                         overlay.classList.add('hidden');
                     });
             } catch (error) {
