@@ -302,8 +302,8 @@
         }
 
         #chatSelect {
-            margin-left: 20px;
-            min-width: 120px;
+            margin-left: 10px;
+            min-width: 90px;
             height: 37px;
             background: #000;
             color: #fff;
@@ -311,6 +311,16 @@
             border-radius: 9px;
             padding: 0 10px;
             outline: none;
+        }
+        
+        #overlay {
+            background: #000000d1;
+            position: fixed;
+            top: 0;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            z-index: 1;
         }
 
         @media screen and (max-width: 768px) {
@@ -354,7 +364,9 @@
             <select id="chatSelect">
             </select>
         </div>
-        <div id="loader"></div>
+        <div id="overlay">
+          <div id="loader"></div>
+        </div>
         <div id="messages"></div>
     </div>
     <button id="scrollTop" class="scroll-button" onclick="window.scrollTo(0, 0)">⬆️</button>
@@ -362,8 +374,8 @@
     <script>
         // 初始化聊天数据
         let allMessages = [];
-        const loader = document.getElementById('loader');
-        loader.classList.remove('hidden');
+        const overlay = document.getElementById('overlay');
+        overlay.classList.remove('hidden');
         const chatId = '{{ chat_id }}';
         const pageSize = 20;
         const contextSize = 5
@@ -392,7 +404,7 @@
                     console.error('加载聊天记录失败:', error);
                 })
                 .finally(() => {
-                    loader.classList.add('hidden');
+                    overlay.classList.add('hidden');
                 });
         }
         let currentStartIndex;
@@ -686,40 +698,48 @@
 
         // 搜索函数，服务器返回匹配消息及其索引，非连续组之间插入加载按钮
         function searchMessages() {
+            overlay.classList.remove('hidden');
             const searchValue = document.getElementById('searchBox').value.trim().toLowerCase();
             if (!searchValue) {
                 isSearching = false;
                 messagesContainer.innerHTML = "";
                 loadInitialMessages();
+                overlay.classList.add('hidden');
                 return;
             }
             isSearching = true;
-            fetch(`/search/${chatId}?q=${encodeURIComponent(searchValue)}`)
-                .then(response => response.json())
-                .then(data => {
-                    const results = data.results;
-                    messagesContainer.innerHTML = "";
-                    let fragment = document.createDocumentFragment();
-                    if (results.length > 0 && results[0].index > 0) {
-                        fragment.appendChild(createSeparatorElement(0, results[0].index, "up", searchValue));
-                    }
-                    let lastIndex = null;
-                    results.forEach(r => {
-                        const idx = r.index;
-                        if (lastIndex !== null && idx !== lastIndex + 1) {
-                            fragment.appendChild(createSeparatorElement(lastIndex, idx, "down", searchValue));
-                            fragment.appendChild(createSeparatorElement(lastIndex, idx, "up", searchValue));
+            try {
+                fetch(`/search/${chatId}?q=${encodeURIComponent(searchValue)}`)
+                    .then(response => response.json())
+                    .then(data => {
+                        const results = data.results;
+                        messagesContainer.innerHTML = "";
+                        let fragment = document.createDocumentFragment();
+                        if (results.length > 0 && results[0].index > 0) {
+                            fragment.appendChild(createSeparatorElement(0, results[0].index, "up", searchValue));
                         }
-                        let tempDiv = document.createElement('div');
-                        tempDiv.innerHTML = createMessageHtml(r, idx, searchValue);
-                        fragment.appendChild(tempDiv.firstElementChild);
-                        lastIndex = idx;
+                        let lastIndex = null;
+                        results.forEach(r => {
+                            const idx = r.index;
+                            if (lastIndex !== null && idx !== lastIndex + 1) {
+                                fragment.appendChild(createSeparatorElement(lastIndex, idx, "down", searchValue));
+                                fragment.appendChild(createSeparatorElement(lastIndex, idx, "up", searchValue));
+                            }
+                            let tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = createMessageHtml(r, idx, searchValue);
+                            fragment.appendChild(tempDiv.firstElementChild);
+                            lastIndex = idx;
+                        });
+                        if (lastIndex !== null && lastIndex < totalMessages - 1) {
+                            fragment.appendChild(createSeparatorElement(lastIndex, totalMessages, "down", searchValue));
+                        }
+                        messagesContainer.appendChild(fragment);
+                        overlay.classList.add('hidden');
                     });
-                    if (lastIndex !== null && lastIndex < totalMessages - 1) {
-                        fragment.appendChild(createSeparatorElement(lastIndex, totalMessages, "down", searchValue));
-                    }
-                    messagesContainer.appendChild(fragment);
-                });
+            } catch (error) {
+                console.error(error);
+                overlay.classList.add('hidden');
+            }
         }
 
         document.addEventListener('DOMContentLoaded', loadMessages);
