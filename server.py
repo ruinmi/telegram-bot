@@ -252,6 +252,11 @@ def get_messages(chat_id):
                 item['msg_files'] = json.loads(item['msg_files'])
             except Exception:
                 item['msg_files'] = None
+        if item.get('reactions'):
+            try:
+                item['reactions'] = json.loads(item['reactions'])
+            except Exception:
+                item['reactions'] = None
         messages.append(item)
     conn.close()
     return jsonify({'total': total, 'offset': offset, 'messages': messages})
@@ -272,6 +277,21 @@ def get_message(chat_id, msg_id):
     cur.execute('SELECT * FROM messages WHERE chat_id=? AND msg_id=?', (chat_id, msg_id))
     rows = cur.fetchall()
     message = dict(rows[0])
+    if message.get('og_info'):
+        try:
+            message['og_info'] = json.loads(message['og_info'])
+        except Exception:
+            message['og_info'] = None
+    if message.get('msg_files'):
+        try:
+            message['msg_files'] = json.loads(message['msg_files'])
+        except Exception:
+            message['msg_files'] = None
+    if message.get('reactions'):
+        try:
+            message['reactions'] = json.loads(message['reactions'])
+        except Exception:
+            message['reactions'] = None
     conn.close()
     return jsonify(message)
                 
