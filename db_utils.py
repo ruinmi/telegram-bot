@@ -24,7 +24,9 @@ def init_db(conn):
             display_height INTEGER,
             display_width INTEGER,
             og_info TEXT,
+            reactions TEXT,
             msg_files TEXT,
+            reply_to_msg_id INTEGER,
             PRIMARY KEY(chat_id, msg_id)
         )
     ''')
@@ -49,16 +51,17 @@ def save_messages(conn, chat_id, messages):
         INSERT OR IGNORE INTO messages(
             chat_id, msg_id, date, timestamp,
             msg_file_name, user, msg,
-            display_height, display_width, og_info, msg_files
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            display_height, display_width, og_info, reactions, msg_files, reply_to_msg_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
     data = []
     for m in messages:
         og_info = json.dumps(m.get('og_info'), ensure_ascii=False) if m.get('og_info') else None
+        reactions = json.dumps(m.get('reactions'), ensure_ascii=False) if m.get('reactions') else None
         msg_files = json.dumps(m.get('msg_files'), ensure_ascii=False) if m.get('msg_files') else None
         data.append((chat_id, m['msg_id'], m['date'], m['timestamp'],
                      m['msg_file_name'], m['user'], m['msg'],
-                     m['display_height'], m['display_width'], og_info, msg_files))
+                     m['display_height'], m['display_width'], og_info, reactions, msg_files, m['reply_to_msg_id']))
     conn.executemany(insert_sql, data)
     conn.commit()
 
@@ -70,6 +73,16 @@ def get_last_export_time(conn):
 
 def set_last_export_time(conn, value):
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('last_export_time', ?)", (str(value),))
+    conn.commit()
+
+def get_exported_time(conn):
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM meta WHERE key='exported_time'")
+    row = cur.fetchone()
+    return row[0] if row else '0'
+ 
+def set_exported_time(conn, value):
+    conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('exported_time', ?)", (str(value),))
     conn.commit()
 
 def update_og_info(conn, chat_id, og_fetcher):

@@ -7,7 +7,7 @@ import uuid
 import requests
 import urllib
 import threading
-from db_utils import get_last_export_time, set_last_export_time
+from db_utils import get_last_export_time, set_exported_time
 
 tdl_lock = threading.Lock()
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -70,7 +70,7 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
             with open(msg_json_path, 'w', encoding='utf-8') as file:
                 json.dump(existing_data, file, ensure_ascii=False, indent=4)
             # Save the current time as the last export time
-            set_last_export_time(conn, current_time)
+            set_exported_time(conn, current_time)
         else:
             logger.exception(f"Error exporting chat: {result.stdout}")
 

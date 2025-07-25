@@ -1,5 +1,7 @@
 import json
 from datetime import datetime, timezone, timedelta
+
+import db_utils
 from update_messages import export_chat, download
 from project_logger import get_logger
 from PIL import Image
@@ -162,7 +164,7 @@ def get_open_graph_info(url):
         return None
 
 
-def parse_messages(id, raw_messages, tz, script_dir, remark=None):
+def parse_messages(id, raw_messages, tz, remark=None):
     logger = get_logger(remark or id)
     messages = []
     group_messages = []
@@ -177,15 +179,17 @@ def parse_messages(id, raw_messages, tz, script_dir, remark=None):
         og_info = None
         og_width, og_height = None, None
         if links and not msg_file:  # 如果有链接且没有文件
-            og_info = get_open_graph_info(links[0], script_dir)  # 获取第一个链接的Open Graph信息
+            og_info = get_open_graph_info(links[0])  # 获取第一个链接的Open Graph信息
             if og_info:
                 og_width, og_height = og_info.get('width', None), og_info.get('height', None)
         display_width, display_height = calculate_telegram_image_display(msg_file_name, og_width, og_height)
         timestamp = raw_message.get("date", 0)
         date = convert_timestamp_to_date(timestamp, tz)
-        raw_data = raw_message.get("raw", {})
-        from_id = raw_data.get("FromID", {}) if raw_data else {}
-        user_id = from_id.get('UserID', '') if from_id else ''
+        raw_data = raw_message.get("raw", {}) or {}
+        from_id = raw_data.get("FromID") or {}
+        user_id = from_id.get('UserID', '') if isinstance(from_id, dict) else ''
+        reply_to_msg_id = (raw_data.get('ReplyTo') or {}).get('ReplyToMsgID', 0)
+        reactions = raw_data.get('Reactions') or {}
         user = '我' if user_id else ''
 
         message = {
@@ -196,6 +200,8 @@ def parse_messages(id, raw_messages, tz, script_dir, remark=None):
             'msg_files': [],
             'user': user,
             'msg': msg_text,
+            'reply_to_msg_id': reply_to_msg_id,
+            'reactions': reactions,
             'display_height': display_height,
             'display_width': display_width,
             'og_info': og_info
@@ -305,8 +311,9 @@ def handle(chat_id, is_download, is_all, is_raw, remark):
                 data = load_json(msg_json_path)
                 china_timezone = timezone(timedelta(hours=8))
                 messages_data = data.get("messages", [])
-                messages = parse_messages(chat_id, messages_data, china_timezone, script_dir, remark)
+                messages = parse_messages(chat_id, messages_data, china_timezone, remark)
                 save_messages(conn, chat_id, messages)
+                db_utils.set_last_export_time(conn, db_utils.get_exported_time(conn))
             except Exception as e:
                 logger.exception(f'Error parsing {msg_json_path}: {e}')
             finally:

@@ -256,6 +256,25 @@ def get_messages(chat_id):
     conn.close()
     return jsonify({'total': total, 'offset': offset, 'messages': messages})
 
+@app.route('/messages/<chat_id>/<msg_id>')
+@requires_auth
+def get_message(chat_id, msg_id):
+    conn = get_db(chat_id)
+    if not conn:
+        return jsonify({'error': 'chat_id required'}), 400
+    cur = conn.cursor()
+    cur.execute('SELECT COUNT(*) FROM messages WHERE chat_id=? AND msg_id=?',
+                (chat_id, msg_id))
+    total = cur.fetchone()[0]
+    if total < 1:
+        return jsonify({'total': 0, 'offset': 0, 'messages': []})
+    
+    cur.execute('SELECT * FROM messages WHERE chat_id=? AND msg_id=?', (chat_id, msg_id))
+    rows = cur.fetchall()
+    message = dict(rows[0])
+    conn.close()
+    return jsonify(message)
+                
 @app.route('/search/<chat_id>')
 @requires_auth
 def search_messages(chat_id):
