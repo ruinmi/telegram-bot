@@ -305,19 +305,36 @@
             -webkit-box-orient: vertical;
             -webkit-line-clamp: 7;
         }
-
+        
         .reply-info {
-            position: relative;
-            border-radius: .25rem;
+            border-radius: 5px;
             overflow: hidden;
-            margin-bottom: 6px;
             display: flex;
-            max-width: 100%;
+            position: relative;
+            margin-top: 8px;
+            margin-left: 10px;
+            margin-right: 8px;
+        }
+        
+        .reply-content::before {
+            content: " ";
+            position: absolute;
+            inset-inline-start: 0;
+            top: 0;
+            bottom: 0;
+            flex: 0 0 auto;
+            width: .1875rem;
+            background: #ffffff;
+            z-index: 1;
+        }
+
+        .reply-content.left::before {
+            background: #ea6551;
         }
 
         .reply-image img {
-            width: 64px;
-            height: 64px;
+            width: 24px;
+            height: 24px;
             object-fit: cover;
             border-radius: .25rem;
         }
@@ -330,11 +347,11 @@
         }
 
         .reply-content.left {
-            background: #2b2b2b;
+            background: #ff39392e;
         }
 
         .reply-content.right {
-            background: rgba(118, 106, 200, 0.3);
+            background: rgb(165 152 255 / 74%);
         }
 
         .reply-text {
@@ -344,7 +361,8 @@
             text-overflow: ellipsis;
             display: -webkit-box;
             -webkit-box-orient: vertical;
-            -webkit-line-clamp: 3;
+            -webkit-line-clamp: 1;
+            padding-left: 3px;
         }
 
         .reactions {
@@ -379,7 +397,8 @@
 
         @media screen and (max-width: 768px) {
             body {
-                font-size: 18px;
+                font-size: 17px;
+                font-weight: bold;
             }
 
             body #header {
@@ -513,6 +532,9 @@
             let ogHtml = "";
             let replyHtml = "";
             let reactionsHtml = "";
+            if (message.display_width && message.display_width === 500) {
+                message.display_width = 250;
+            }
             if (message.reply_to_msg_id) {
                 const replyId = `reply-${message.msg_id}`;
                 replyHtml = `<div class="reply-placeholder" id="${replyId}" data-reply="${message.reply_to_msg_id}" data-position="${position}"></div>`;
@@ -520,7 +542,7 @@
             if (message.msg_file_name) {
                 let lowerName = message.msg_file_name.toLowerCase();
                 if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
-                    mediaHtml = `<div class="image"><img style="max-width: 100%; max-height: ${message.display_height}px" src="/${message.msg_file_name}" alt="图片" /></div>`;
+                    mediaHtml = `<div class="image"><img style="max-width: ${message.display_width}px" src="/${message.msg_file_name}" alt="图片" /></div>`;
                 } else if (lowerName.endsWith('.mp4') || lowerName.endsWith('.mov') || lowerName.endsWith('.avi')) {
                     mediaHtml = `<div class="video"><video controls><source src="/${message.msg_file_name}" type="video/mp4">Your browser does not support the video tag.</video></div>`;
                 } else {
@@ -561,7 +583,7 @@
                             return `
         <div class="image">
             <a href="/${fileName}" target="_blank">
-                <img style="max-width: 100%; max-height: ${message.display_height}px" src="/${fileName}" alt="图片" />
+                <img style="max-width: ${message.display_width}px" src="/${fileName}" alt="图片" />
             </a>
         </div>
     `;
@@ -593,20 +615,22 @@
                 reactionsHtml = `<div class="reactions">${list}</div>`;
             }
         }
-
-
-            return `<div class="message ${position
-                } clearfix">
-                            <div class="date ${position
-                }">${message.date}</div>
-                            <div class="user ${position
-                }">${message.user}</div>
-                            ${replyHtml}
-                            ${message.msg ? `<div class="msg">${messageContent}</div>` : ""}
-                            ${mediaHtml}
-                            ${ogHtml}
-                            ${reactionsHtml}
-                        </div>`;
+        let widthStr = '';
+        if (message.display_width) {
+            widthStr = `style="max-width: ${message.display_width}px"`
+        }
+        return `<div ${widthStr} class="message ${position
+            } clearfix">
+                        <div class="date ${position
+            }">${message.date}</div>
+                        <div class="user ${position
+            }">${message.user}</div>
+                        ${replyHtml}
+                        ${message.msg ? `<div class="msg">${messageContent}</div>` : ""}
+                        ${mediaHtml}
+                        ${ogHtml}
+                        ${reactionsHtml}
+                    </div>`;
         }
 
 function fillReplyPlaceholders(searchValue = "") {
@@ -620,6 +644,21 @@ function fillReplyPlaceholders(searchValue = "") {
                 const lower = data.msg_file_name.toLowerCase();
                 if (/(?:\.png|\.jpg|\.jpeg|\.gif|\.webp)$/.test(lower)) {
                     img = `<div class="reply-image"><img src="/${data.msg_file_name}" alt="图片"></div>`;
+                }
+            } else if (data.msg_files) {
+                let files;
+                if (!Array.isArray(data.msg_files)) {
+                    files = JSON.parse(data.msg_files);
+                } else {
+                    files = data.msg_files;
+                }
+                if (files) {
+                    img = files.map(fileName => {
+                        let lowerName = fileName.toLowerCase();
+                        if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
+                            return `<div class="reply-image"><img src="/${fileName}" alt="图片"></div>`;
+                        }
+                    });
                 }
             }
             let text = data.msg ? highlightText(data.msg, searchValue) : "";
