@@ -535,7 +535,30 @@
             if (message.display_width && message.display_width === 500) {
                 message.display_width = 250;
             }
-            if (message.reply_to_msg_id) {
+            if (message.reply_message) {
+                const data = message.reply_message;
+                let img = "";
+                if (data.msg_file_name) {
+                    const lower = data.msg_file_name.toLowerCase();
+                    if (/(?:\.png|\.jpg|\.jpeg|\.gif|\.webp)$/.test(lower)) {
+                        img = `<div class="reply-image"><img src="/${data.msg_file_name}" alt="图片"></div>`;
+                    }
+                } else if (data.msg_files) {
+                    let files = Array.isArray(data.msg_files) ? data.msg_files : JSON.parse(data.msg_files);
+                    if (files) {
+                        img = files.map(fileName => {
+                            let lowerName = fileName.toLowerCase();
+                            if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
+                                return `<div class="reply-image"><img src="/${fileName}" alt="图片"></div>`;
+                            }
+                        }).join('');
+                    }
+                }
+                let text = data.msg ? highlightText(data.msg, searchValue) : "";
+                text = text.replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>');
+                text = text.replace(/\n/g, '<br/>');
+                replyHtml = `<div class="reply-info"><div class="reply-content ${position}">${img}<div class="reply-text">${text}</div></div></div>`;
+            } else if (message.reply_to_msg_id) {
                 const replyId = `reply-${message.msg_id}`;
                 replyHtml = `<div class="reply-placeholder" id="${replyId}" data-reply="${message.reply_to_msg_id}" data-position="${position}"></div>`;
             }

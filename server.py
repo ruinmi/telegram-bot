@@ -178,6 +178,25 @@ def get_db(chat_id):
     conn = get_connection(chat_id, sqlite3.Row)
     return conn
 
+def row_to_message(row):
+    item = dict(row)
+    if item.get('og_info'):
+        try:
+            item['og_info'] = json.loads(item['og_info'])
+        except Exception:
+            item['og_info'] = None
+    if item.get('msg_files'):
+        try:
+            item['msg_files'] = json.loads(item['msg_files'])
+        except Exception:
+            item['msg_files'] = None
+    if item.get('reactions'):
+        try:
+            item['reactions'] = json.loads(item['reactions'])
+        except Exception:
+            item['reactions'] = None
+    return item
+
 @app.route('/chat/<chat_id>')
 @requires_auth
 def chat_page(chat_id):
@@ -241,22 +260,14 @@ def get_messages(chat_id):
     rows = cur.fetchall()
     messages = []
     for row in rows:
-        item = dict(row)
-        if item.get('og_info'):
-            try:
-                item['og_info'] = json.loads(item['og_info'])
-            except Exception:
-                item['og_info'] = None
-        if item.get('msg_files'):
-            try:
-                item['msg_files'] = json.loads(item['msg_files'])
-            except Exception:
-                item['msg_files'] = None
-        if item.get('reactions'):
-            try:
-                item['reactions'] = json.loads(item['reactions'])
-            except Exception:
-                item['reactions'] = None
+        item = row_to_message(row)
+        if item.get('reply_to_msg_id'):
+            cur2 = conn.cursor()
+            cur2.execute('SELECT * FROM messages WHERE chat_id=? AND msg_id=?',
+                         (chat_id, item['reply_to_msg_id']))
+            r = cur2.fetchone()
+            if r:
+                item['reply_message'] = row_to_message(r)
         messages.append(item)
     conn.close()
     return jsonify({'total': total, 'offset': offset, 'messages': messages})
@@ -276,22 +287,13 @@ def get_message(chat_id, msg_id):
     
     cur.execute('SELECT * FROM messages WHERE chat_id=? AND msg_id=?', (chat_id, msg_id))
     rows = cur.fetchall()
-    message = dict(rows[0])
-    if message.get('og_info'):
-        try:
-            message['og_info'] = json.loads(message['og_info'])
-        except Exception:
-            message['og_info'] = None
-    if message.get('msg_files'):
-        try:
-            message['msg_files'] = json.loads(message['msg_files'])
-        except Exception:
-            message['msg_files'] = None
-    if message.get('reactions'):
-        try:
-            message['reactions'] = json.loads(message['reactions'])
-        except Exception:
-            message['reactions'] = None
+    message = row_to_message(rows[0])
+    if message.get('reply_to_msg_id'):
+        cur.execute('SELECT * FROM messages WHERE chat_id=? AND msg_id=?',
+                    (chat_id, message['reply_to_msg_id']))
+        r = cur.fetchone()
+        if r:
+            message['reply_message'] = row_to_message(r)
     conn.close()
     return jsonify(message)
                 
@@ -353,14 +355,16 @@ def search_messages(chat_id):
     
     results = []
     for row in rows:
-        item = dict(row)
-        if item.get('og_info'):
-            try:
-                item['og_info'] = json.loads(item['og_info'])
-            except Exception:
-                item['og_info'] = None
+        item = row_to_message(row)
         if 'idx' in item:
             item['index'] = item.pop('idx')
+        if item.get('reply_to_msg_id'):
+            cur2 = conn.cursor()
+            cur2.execute('SELECT * FROM messages WHERE chat_id=? AND msg_id=?',
+                         (chat_id, item['reply_to_msg_id']))
+            r = cur2.fetchone()
+            if r:
+                item['reply_message'] = row_to_message(r)
         results.append(item)
     conn.close()
     return jsonify({'total': total, 'results': results})
