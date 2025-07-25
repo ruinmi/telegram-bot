@@ -558,10 +558,8 @@
                 text = text.replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>');
                 text = text.replace(/\n/g, '<br/>');
                 replyHtml = `<div class="reply-info"><div class="reply-content ${position}">${img}<div class="reply-text">${text}</div></div></div>`;
-            } else if (message.reply_to_msg_id) {
-                const replyId = `reply-${message.msg_id}`;
-                replyHtml = `<div class="reply-placeholder" id="${replyId}" data-reply="${message.reply_to_msg_id}" data-position="${position}"></div>`;
             }
+            
             if (message.msg_file_name) {
                 let lowerName = message.msg_file_name.toLowerCase();
                 if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
@@ -656,42 +654,6 @@
                     </div>`;
         }
 
-function fillReplyPlaceholders(searchValue = "") {
-    document.querySelectorAll(".reply-placeholder").forEach(div => {
-        if (div.dataset.loaded) return;
-        const msgId = div.dataset.reply;
-        const pos = div.dataset.position;
-        fetch(`/messages/${chatId}/${msgId}`).then(r => r.json()).then(data => {
-            let img = "";
-            if (data.msg_file_name) {
-                const lower = data.msg_file_name.toLowerCase();
-                if (/(?:\.png|\.jpg|\.jpeg|\.gif|\.webp)$/.test(lower)) {
-                    img = `<div class="reply-image"><img src="/${data.msg_file_name}" alt="图片"></div>`;
-                }
-            } else if (data.msg_files) {
-                let files;
-                if (!Array.isArray(data.msg_files)) {
-                    files = JSON.parse(data.msg_files);
-                } else {
-                    files = data.msg_files;
-                }
-                if (files) {
-                    img = files.map(fileName => {
-                        let lowerName = fileName.toLowerCase();
-                        if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
-                            return `<div class="reply-image"><img src="/${fileName}" alt="图片"></div>`;
-                        }
-                    });
-                }
-            }
-            let text = data.msg ? highlightText(data.msg, searchValue) : "";
-            text = text.replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>');
-            text = text.replace(/\n/g, '<br/>');
-            div.innerHTML = `<div class="reply-info"><div class="reply-content ${pos}">${img}<div class="reply-text">${text}</div></div></div>`;
-            div.dataset.loaded = "1";
-        });
-    });
-}
         // 创建可点击的分隔符元素，通过接口按需加载上下文消息
         function createSeparatorElement(startIndex, endIndex, direction, searchValue) {
             let separator = document.createElement('div');
@@ -727,7 +689,6 @@ function fillReplyPlaceholders(searchValue = "") {
                     while (container.firstChild) {
                         parent.insertBefore(container.firstChild, nextSibling);
                     }
-                    fillReplyPlaceholders(searchValue);
                     if (dir === "down") {
                         if (s + count < e - 1) {
                             let newSep = createSeparatorElement(s + count, e, "down", searchValue);
@@ -760,7 +721,6 @@ function fillReplyPlaceholders(searchValue = "") {
                 } else {
                     messagesContainer.innerHTML += html;
                 }
-                fillReplyPlaceholders();
                 resolve();
             });
         }
@@ -828,13 +788,7 @@ function fillReplyPlaceholders(searchValue = "") {
 
         function loadOlderMessagesWithScrollAdjustment() {
             if (isLoadingOlderMessages) return;
-            const prevHeight = document.body.scrollHeight;
-            const prevScrollY = window.scrollY;
-            loadOlderMessages().then(() => {
-                const newHeight = document.body.scrollHeight;
-                const deltaHeight = newHeight - prevHeight;
-                window.scrollTo(0, prevScrollY + deltaHeight);
-            });
+            loadOlderMessages();
         }
 
         // 当非搜索模式下，滚动到页面顶部时触发加载更多
@@ -887,7 +841,6 @@ function fillReplyPlaceholders(searchValue = "") {
                             fragment.appendChild(createSeparatorElement(lastIndex, totalMessages, "down", searchValue));
                         }
                         messagesContainer.appendChild(fragment);
-                        fillReplyPlaceholders(searchValue);
                         overlay.classList.add('hidden');
                     });
             } catch (error) {
