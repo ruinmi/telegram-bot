@@ -225,7 +225,7 @@ def parse_messages(id, raw_messages, tz, remark=None):
                     main_msg['msg_files'].append(main_msg['msg_file_name'])
                     main_msg['msg_file_name'] = ''
 
-                if len(group_messages) > 0:
+                if len(group_messages) > 1:
                     w, h = compute_msg_files_size(len(group_messages))
                     for msg in group_messages:
                         msg['display_width'] = w
@@ -246,11 +246,11 @@ def parse_messages(id, raw_messages, tz, remark=None):
             main_msg['msg_files'].append(main_msg['msg_file_name'])
             main_msg['msg_file_name'] = ''
 
-        if len(group_messages) > 0:
+        if len(group_messages) > 1:
             w, h = compute_msg_files_size(len(group_messages))
             for msg in group_messages:
                 msg['display_width'] = w
-                msg['display_height'] = h        
+                msg['display_height'] = h
         messages.append(main_msg)
 
     # 排序
@@ -275,10 +275,13 @@ def compute_msg_files_size(num_files, container_width=500, max_per_row=3, gap=5)
     # 每张图片宽度
     width = (container_width - total_gap_width) // cols
 
-    # 如果是正方形，高度等于宽度
+    if num_files == 1:
+        width = min(width, 250)
+
+    # 图片高度与宽度保持一致，形成方形
     height = width
 
-    return width, height
+    return int(width), int(height)
 
 
 def handle(chat_id, is_download, is_all, is_raw, remark):
