@@ -9,7 +9,7 @@ from db_utils import get_connection, save_messages
 from update_messages import export_chat
 from project_logger import get_logger
 from message_utils import load_json, parse_messages
-from og_utils import calculate_display_size, get_open_graph_info
+from og_utils import calculate_size, get_open_graph_info
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
@@ -57,9 +57,9 @@ def handle(chat_id: str, is_download: bool, is_all: bool, is_raw: bool, remark: 
                         if og_info:
                             og_width = og_info.get('width')
                             og_height = og_info.get('height')
-                    display_width, display_height = calculate_display_size(msg_file_name, og_width, og_height)
-                    m['display_width'] = display_width
-                    m['display_height'] = display_height
+                    ori_width, ori_height = calculate_size(msg_file_name, og_width, og_height)
+                    m['ori_width'] = ori_width
+                    m['ori_height'] = ori_height
                     m['og_info'] = og_info
                 messages = parse_messages(chat_id, messages_data, tz, remark)
                 save_messages(conn, chat_id, messages)

@@ -21,8 +21,8 @@ def init_db(conn):
             msg_file_name TEXT,
             user TEXT,
             msg TEXT,
-            display_height INTEGER,
-            display_width INTEGER,
+            ori_height INTEGER,
+            ori_width INTEGER,
             og_info TEXT,
             reactions TEXT,
             msg_files TEXT,
@@ -51,7 +51,7 @@ def save_messages(conn, chat_id, messages):
         INSERT OR IGNORE INTO messages(
             chat_id, msg_id, date, timestamp,
             msg_file_name, user, msg,
-            display_height, display_width, og_info, reactions, msg_files, reply_to_msg_id
+            ori_height, ori_width, og_info, reactions, msg_files, reply_to_msg_id
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
     data = []
@@ -61,7 +61,7 @@ def save_messages(conn, chat_id, messages):
         msg_files = json.dumps(m.get('msg_files'), ensure_ascii=False) if m.get('msg_files') else None
         data.append((chat_id, m['msg_id'], m['date'], m['timestamp'],
                      m['msg_file_name'], m['user'], m['msg'],
-                     m['display_height'], m['display_width'], og_info, reactions, msg_files, m['reply_to_msg_id']))
+                     m['ori_height'], m['ori_width'], og_info, reactions, msg_files, m['reply_to_msg_id']))
     conn.executemany(insert_sql, data)
     conn.commit()
 

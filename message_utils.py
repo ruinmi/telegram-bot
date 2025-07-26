@@ -16,17 +16,6 @@ def convert_timestamp_to_date(timestamp: int, tz) -> str:
     return datetime.fromtimestamp(timestamp, tz).strftime('%Y-%m-%d %H:%M:%S')
 
 
-def compute_msg_files_size(num_files: int, container_width: int = 500, max_per_row: int = 3, gap: int = 5) -> tuple[int, int]:
-    """Calculate image width and height for grouped message files."""
-    if num_files == 0:
-        return 0, 0
-    cols = min(num_files, max_per_row)
-    total_gap_width = gap * (cols - 1)
-    width = (container_width - total_gap_width) // cols
-    height = width
-    return width, height
-
-
 def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | None = None) -> List[Dict[str, Any]]:
     from project_logger import get_logger
     logger = get_logger(remark or chat_id)
@@ -60,8 +49,8 @@ def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | Non
             'msg': msg_text,
             'reply_to_msg_id': reply_to_msg_id,
             'reactions': reactions,
-            'display_height': raw_message.get('display_height'),
-            'display_width': raw_message.get('display_width'),
+            'ori_height': raw_message.get('ori_height'),
+            'ori_width': raw_message.get('ori_width'),
             'og_info': og_info
         }
         group_id = raw_data.get('GroupedID', '')
@@ -78,11 +67,6 @@ def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | Non
                 if main_msg['msg_file_name']:
                     main_msg['msg_files'].append(main_msg['msg_file_name'])
                     main_msg['msg_file_name'] = ''
-                if len(group_messages) > 0:
-                    w, h = compute_msg_files_size(len(group_messages))
-                    for msg in group_messages:
-                        msg['display_width'] = w
-                        msg['display_height'] = h
                 messages.append(main_msg)
             group_messages = [message]
             last_group_id = group_id
@@ -95,11 +79,6 @@ def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | Non
         if main_msg['msg_file_name']:
             main_msg['msg_files'].append(main_msg['msg_file_name'])
             main_msg['msg_file_name'] = ''
-        if len(group_messages) > 0:
-            w, h = compute_msg_files_size(len(group_messages))
-            for msg in group_messages:
-                msg['display_width'] = w
-                msg['display_height'] = h
         messages.append(main_msg)
 
     return sorted(messages, key=lambda x: x['date'])

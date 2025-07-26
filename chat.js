@@ -85,9 +85,6 @@
             let ogHtml = "";
             let replyHtml = "";
             let reactionsHtml = "";
-            if (message.display_width && message.display_width === 500) {
-                message.display_width = 250;
-            }
             if (message.reply_message) {
                 const data = message.reply_message;
                 let img = "";

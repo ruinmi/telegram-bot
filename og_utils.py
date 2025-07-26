@@ -40,8 +40,8 @@ def get_image_size(image_path: str) -> tuple[int, int]:
         return img.size
 
 
-def calculate_display_size(file_path: str, og_width: int | None, og_height: int | None) -> tuple[int | None, int | None]:
-    original_width = original_height = None
+def calculate_size(file_path: str, og_width: int | None, og_height: int | None) -> tuple[int | None, int | None]:
+    original_width = original_height = 0
     if os.path.exists(file_path):
         if file_path.lower().endswith(('.mp4', '.mov', '.avi')):
             return 500, 280
@@ -51,25 +51,7 @@ def calculate_display_size(file_path: str, og_width: int | None, og_height: int 
     elif og_width and og_height:
         original_width = int(og_width)
         original_height = int(og_height)
-    else:
-        return None, None
-
-    max_width_ratio = 0.7
-    max_height_ratio = 0.7
-    max_display_width = 1000 * max_width_ratio
-    max_display_height = 800 * max_height_ratio
-    aspect_ratio = original_width / original_height
-    if original_width > max_display_width:
-        display_width = max_display_width
-        display_height = display_width / aspect_ratio
-    else:
-        display_width = original_width
-        display_height = original_height
-    if display_height > max_display_height:
-        display_height = max_display_height
-        display_width = display_height * aspect_ratio
-    return int(display_width), int(display_height)
-
+    return original_width, original_height
 
 def get_open_graph_info(url: str, chat_id: str | None = None) -> dict | None:
     og_data = load_og_data()
