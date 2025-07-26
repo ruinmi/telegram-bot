@@ -7,6 +7,7 @@ const pageSize = 20;
 const contextSize = 5
 let oldestIndex = 0;
 let totalMessages = 0;
+const DEFAULT_MAX_IMG_HEIGHT = window.innerHeight * 0.5;
 
 // 动态加载 JSON 数据
 function fetchMessages(offset, limit) {
@@ -80,131 +81,182 @@ function highlightText(text, searchValue) {
 
 // 根据单个消息数据生成 HTML 结构
 function createMessageHtml(message, index, searchValue) {
-    let position = message.user === '我' ? 'right' : 'left';
-    let messageContent = message.msg ? highlightText(message.msg, searchValue) : "";
-    messageContent = messageContent.replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>');
-    messageContent = messageContent.replace(/\n/g, "<br/>");
-    let mediaHtml = "";
-    let ogHtml = "";
-    let replyHtml = "";
-    let reactionsHtml = "";
-    if (message.reply_message) {
-        const data = message.reply_message;
-        let img = "";
-        if (data.msg_file_name) {
-            const lower = data.msg_file_name.toLowerCase();
-            if (/(?:\.png|\.jpg|\.jpeg|\.gif|\.webp)$/.test(lower)) {
-                img = `<div class="reply-image"><img src="/${data.msg_file_name}" alt="图片"></div>`;
-            }
-        } else if (data.msg_files) {
-            let files = Array.isArray(data.msg_files) ? data.msg_files : JSON.parse(data.msg_files);
-            if (files) {
-                img = files.map(fileName => {
-                    let lowerName = fileName.toLowerCase();
-                    if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
-                        return `<div class="reply-image"><img src="/${fileName}" alt="图片"></div>`;
-                    }
-                }).join('');
-            }
-        }
-        let text = data.msg ? highlightText(data.msg, searchValue) : "";
-        text = text.replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>');
-        text = text.replace(/\n/g, '<br/>');
-        replyHtml = `<div class="reply-info"><div class="reply-content ${position}">${img}<div class="reply-text">${text}</div></div></div>`;
-    }
+    const position = message.user === '我' ? 'right' : 'left';
 
-    if (message.msg_file_name) {
-        let lowerName = message.msg_file_name.toLowerCase();
-        if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
-            mediaHtml = `<div class="image"><img style="max-width: ${message.display_width}px" src="/${message.msg_file_name}" alt="图片" /></div>`;
-        } else if (lowerName.endsWith('.mp4') || lowerName.endsWith('.mov') || lowerName.endsWith('.avi')) {
-            mediaHtml = `<div class="video"><video controls><source src="/${message.msg_file_name}" type="video/mp4">Your browser does not support the video tag.</video></div>`;
-        } else {
-            let parts = message.msg_file_name.split('/');
-            let fileName = parts[parts.length - 1];
-            mediaHtml = `
-                            <div class="download">
-                                <a href="/${message.msg_file_name}" download>
-                                    <svg style="vertical-align: bottom;" t="1739785072303" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1483" width="24" height="24"><path d="M928 448c-17.7 0-32 14.3-32 32v319.5c0 17.9-14.6 32.5-32.5 32.5h-703c-17.9 0-32.5-14.6-32.5-32.5V480c0-17.7-14.3-32-32-32s-32 14.3-32 32v319.5c0 53.2 43.3 96.5 96.5 96.5h703c53.2 0 96.5-43.3 96.5-96.5V480c0-17.7-14.3-32-32-32z" fill="#fff" p-id="1484"></path><path d="M489.4 726.6c0.4 0.4 0.8 0.7 1.2 1.1l0.4 0.4c0.2 0.2 0.5 0.4 0.7 0.6 0.2 0.2 0.4 0.3 0.6 0.4 0.2 0.2 0.5 0.4 0.7 0.5 0.2 0.1 0.4 0.3 0.6 0.4 0.2 0.2 0.5 0.3 0.7 0.5 0.2 0.1 0.4 0.2 0.6 0.4 0.3 0.2 0.5 0.3 0.8 0.5 0.2 0.1 0.3 0.2 0.5 0.3 0.3 0.2 0.6 0.3 0.9 0.5 0.1 0.1 0.3 0.1 0.4 0.2 0.3 0.2 0.7 0.3 1 0.5 0.1 0.1 0.2 0.1 0.3 0.2 0.4 0.2 0.7 0.3 1.1 0.5 0.1 0 0.2 0.1 0.2 0.1 0.4 0.2 0.8 0.3 1.2 0.5 0.1 0 0.1 0 0.2 0.1 0.4 0.2 0.9 0.3 1.3 0.4h0.1c0.5 0.1 0.9 0.3 1.4 0.4h0.1c0.5 0.1 0.9 0.2 1.4 0.3h0.2c0.4 0.1 0.9 0.2 1.3 0.2h0.4c0.4 0.1 0.8 0.1 1.2 0.1 0.3 0 0.5 0 0.8 0.1 0.3 0 0.5 0 0.8 0.1H512.2c0.7 0 1.3 0 1.9-0.1h0.6c0.6 0 1.2-0.1 1.8-0.2h0.3c0.7-0.1 1.4-0.2 2.1-0.4 0.1 0 0.2 0 0.3-0.1 0.7-0.2 1.3-0.3 2-0.5h0.1c0.7-0.2 1.4-0.5 2.1-0.7h0.1l2.1-0.9h0.1c0.7-0.3 1.4-0.7 2-1.1 0.1 0 0.1-0.1 0.2-0.1 1.6-0.9 3.2-2 4.6-3.2 0.2-0.2 0.4-0.4 0.6-0.5 0.2-0.2 0.4-0.3 0.6-0.5 0.2-0.2 0.5-0.4 0.7-0.7l0.4-0.4c0.1-0.1 0.2-0.1 0.2-0.2l191.7-191.7c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L544 626.7V96c0-17.7-14.3-32-32-32s-32 14.3-32 32v530.7L342.6 489.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192.1 191.9z" fill="#fff" p-id="1485"></path></svg>
-                                    ${fileName}
-                                </a>
-                            </div>`;
-        }
-    } else if (message.og_info && message.og_info.image) {
-        ogHtml = `
-                    <a class="og-info" href="${message.og_info.url}" target="_blank">
-                        <div class="og-content">
-                            ${message.og_info.site_name ? `<div class="og-sitename">${message.og_info.site_name}</div>` : ""}
-                            ${message.og_info.description ? `<div class="og-text">${message.og_info.description}</div>` : message.og_info.title ? `<div class="og-text">${message.og_info.title}</div>` : ""}
-                            <div class="og-image">
-                                <img src="${message.og_info.image}" 
-                                    alt="${message.og_info.title || 'Open Graph Image'}" 
-                                    />
-                            </div>
-                        </div>
-                    </a>`;
-    } else if (message.msg_files) {
-        let files;
-        if (!Array.isArray(message.msg_files)) {
-            files = JSON.parse(message.msg_files);
-        } else {
-            files = message.msg_files;
-        }
-        if (files) {
-            let innerHtml = files.map(fileName => {
-                let lowerName = fileName.toLowerCase();
-                if (lowerName.endsWith('.png') || lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg') || lowerName.endsWith('.gif') || lowerName.endsWith('.webp')) {
-                    return `
-        <div class="image">
-            <a href="/${fileName}" target="_blank">
-                <img style="max-width: ${message.display_width}px" src="/${fileName}" alt="图片" />
-            </a>
-        </div>
-    `;
-                } else if (lowerName.endsWith('.mp4') || lowerName.endsWith('.mov') || lowerName.endsWith('.avi')) {
-                    return `<div class="video"><video controls><source src="/${fileName}" type="video/mp4">Your browser does not support the video tag.</video></div>`;
-                } else {
-                    let parts = fileName.split('/');
-                    let shortName = parts[parts.length - 1];
-                    return `
-                    <div class="download">
-                        <a href="/${fileName}" download>
-                            <svg style="vertical-align: bottom;" t="1739785072303" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="1483" width="24" height="24"><path d="M928 448c-17.7 0-32 14.3-32 32v319.5c0 17.9-14.6 32.5-32.5 32.5h-703c-17.9 0-32.5-14.6-32.5-32.5V480c0-17.7-14.3-32-32-32s-32 14.3-32 32v319.5c0 53.2 43.3 96.5 96.5 96.5h703c53.2 0 96.5-43.3 96.5-96.5V480c0-17.7-14.3-32-32-32z" fill="#fff" p-id="1484"></path><path d="M489.4 726.6c0.4 0.4 0.8 0.7 1.2 1.1l0.4 0.4c0.2 0.2 0.5 0.4 0.7 0.6 0.2 0.2 0.4 0.3 0.6 0.4 0.2 0.2 0.5 0.4 0.7 0.5 0.2 0.1 0.4 0.3 0.6 0.4 0.2 0.2 0.5 0.3 0.7 0.5 0.2 0.1 0.4 0.2 0.6 0.4 0.3 0.2 0.5 0.3 0.8 0.5 0.2 0.1 0.3 0.2 0.5 0.3 0.3 0.2 0.6 0.3 0.9 0.5 0.1 0.1 0.3 0.1 0.4 0.2 0.3 0.2 0.7 0.3 1 0.5 0.1 0.1 0.2 0.1 0.3 0.2 0.4 0.2 0.7 0.3 1.1 0.5 0.1 0 0.2 0.1 0.2 0.1 0.4 0.2 0.8 0.3 1.2 0.5 0.1 0 0.1 0 0.2 0.1 0.4 0.2 0.9 0.3 1.3 0.4h0.1c0.5 0.1 0.9 0.3 1.4 0.4h0.1c0.5 0.1 0.9 0.2 1.4 0.3h0.2c0.4 0.1 0.9 0.2 1.3 0.2h0.4c0.4 0.1 0.8 0.1 1.2 0.1 0.3 0 0.5 0 0.8 0.1 0.3 0 0.5 0 0.8 0.1H512.2c0.7 0 1.3 0 1.9-0.1h0.6c0.6 0 1.2-0.1 1.8-0.2h0.3c0.7-0.1 1.4-0.2 2.1-0.4 0.1 0 0.2 0 0.3-0.1 0.7-0.2 1.3-0.3 2-0.5h0.1c0.7-0.2 1.4-0.5 2.1-0.7h0.1l2.1-0.9h0.1c0.7-0.3 1.4-0.7 2-1.1 0.1 0 0.1-0.1 0.2-0.1 1.6-0.9 3.2-2 4.6-3.2 0.2-0.2 0.4-0.4 0.6-0.5 0.2-0.2 0.4-0.3 0.6-0.5 0.2-0.2 0.5-0.4 0.7-0.7l0.4-0.4c0.1-0.1 0.2-0.1 0.2-0.2l191.7-191.7c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0L544 626.7V96c0-17.7-14.3-32-32-32s-32 14.3-32 32v530.7L342.6 489.4c-12.5-12.5-32.8-12.5-45.3 0s-12.5 32.8 0 45.3l192.1 191.9z" fill="#fff" p-id="1485"></path></svg>
-                            ${shortName}
-                        </a>
-                    </div>
-                `;
-                }
-            }).join("\n");
+    // 1. 文本内容
+    let messageContent = message.msg
+        ? highlightText(message.msg, searchValue)
+        : '';
+    messageContent = messageContent
+        .replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>')
+        .replace(/\n/g, '<br/>');
 
-            // 用 images 父容器包裹
-            mediaHtml = `<div style="display: flex">\n${innerHtml}\n</div>`;
-        }
-    }
+    // 占位变量
+    let replyHtml     = '';
+    let mediaHtml     = '';
+    let ogHtml        = '';
+    let reactionsHtml = '';
 
+    let hasReaction = false;
     if (message.reactions) {
-        let reactions = typeof message.reactions === 'string' ? JSON.parse(message.reactions) : message.reactions;
-        if (reactions && reactions.Results && reactions.Results.length) {
-            let list = reactions.Results.map(r => `<span>${r.Reaction.Emoticon} ${r.Count}</span>`).join('');
-            reactionsHtml = `<div class="reactions">${list}</div>`;
+        const r = typeof message.reactions === 'string'
+            ? JSON.parse(message.reactions)
+            : message.reactions;
+        if (r.Results?.length) {
+            hasReaction = true;
+            reactionsHtml = `<div class="reactions">` +
+                r.Results.map(e => `<span>${e.Reaction.Emoticon} ${e.Count}</span>`).join('') +
+                `</div>`;
         }
     }
-    let widthStr = '';
-    if (message.display_width) {
-        widthStr = `style="max-width: ${message.display_width}px"`
+    
+    // 2. 回复引用
+    if (message.reply_message) {
+        const d = message.reply_message;
+        let imgPart = '';
+
+        if (d.msg_file_name && /\.(png|jpe?g|gif|webp)$/i.test(d.msg_file_name)) {
+            imgPart = `<div class="reply-image">
+                   <img src="/${d.msg_file_name}" alt="图片">
+                 </div>`;
+        } else if (d.msg_files) {
+            const files = Array.isArray(d.msg_files)
+                ? d.msg_files
+                : JSON.parse(d.msg_files);
+            imgPart = files.map(fn =>
+                /\.(png|jpe?g|gif|webp)$/i.test(fn)
+                    ? `<div class="reply-image"><img src="/${fn}" alt="图片"></div>`
+                    : ''
+            ).join('');
+        }
+
+        let replyText = d.msg ? highlightText(d.msg, searchValue) : '';
+        replyText = replyText
+            .replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>')
+            .replace(/\n/g, '<br/>');
+
+        replyHtml = `
+      <div class="reply-info">
+        <div class="reply-content ${position}">
+          ${imgPart}
+          <div class="reply-text">${replyText}</div>
+        </div>
+      </div>`;
     }
-    return `<div ${widthStr} class="message ${position
-    } clearfix">
-                        <div class="date ${position
-    }">${message.date}</div>
-                        <div class="user ${position
-    }">${message.user}</div>
-                        ${replyHtml}
-                        ${message.msg ? `<div class="msg">${messageContent}</div>` : ""}
-                        ${mediaHtml}
-                        ${ogHtml}
-                        ${reactionsHtml}
-                    </div>`;
+
+    let hasImage = '';
+    // 3. 收集所有“普通图片”文件  
+    const imageFiles = [];
+    if (message.msg_file_name && /\.(png|jpe?g|gif|webp)$/i.test(message.msg_file_name)) {
+        imageFiles.push(message.msg_file_name);
+    }
+    if (message.msg_files) {
+        const files = Array.isArray(message.msg_files)
+            ? message.msg_files
+            : JSON.parse(message.msg_files);
+        files.forEach(fn => {
+            if (/\.(png|jpe?g|gif|webp)$/i.test(fn)) {
+                imageFiles.push(fn);
+            }
+        });
+
+        hasImage = 'has-image';
+    }
+    
+    // 4. 如果有图片 —— 统一走 renderImagesInBubble  
+    if (imageFiles.length > 0) {
+        hasImage = 'has-image';
+        const cid = `img-container-${index}`;
+        mediaHtml = `<div id="${cid}" class="image-grid"></div>`;
+
+        setTimeout(() => {
+            const c = document.getElementById(cid);
+            if (!c) return;
+            const list = imageFiles.map(fn => ({
+                url:    fn,
+                width:  message.ori_width  || 400,
+                height: message.ori_height || 300
+            }));
+            renderImagesInBubble(c, list, {
+                maxPerRow: 3,
+                gap:       1,
+                maxHeight: DEFAULT_MAX_IMG_HEIGHT,
+                hasReaction: hasReaction,
+            });
+        }, 0);
+    }
+    // 5. 否则，如果是视频  
+    else if (message.msg_file_name && /\.(mp4|mov|avi)$/i.test(message.msg_file_name)) {
+        mediaHtml = `
+      <div class="video">
+        <video controls style="max-width:100%;border-radius:6px;">
+          <source src="/${message.msg_file_name}" type="video/mp4">
+        </video>
+      </div>`;
+    }
+    // 6. 否则，如果是其他文件下载  
+    else if (message.msg_file_name) {
+        const short = message.msg_file_name.split('/').pop();
+        mediaHtml = `
+      <div class="download">
+        <a href="/${message.msg_file_name}" download>📎 ${short}</a>
+      </div>`;
+    }
+
+    // 7. OG 预览 —— 也走 renderImagesInBubble（单图，不包链接）
+    if (message.og_info && message.og_info.image) {
+        hasImage = 'has-image';
+        const cidOg = `og-img-${index}`;
+        const oriW  = message.ori_width  || 400;
+        const oriH  = message.ori_height || 300;
+
+        ogHtml = `
+      <a class="og-info" href="${message.og_info.url}" target="_blank">
+        <div class="og-content">
+          ${message.og_info.site_name
+            ? `<div class="og-sitename">${message.og_info.site_name}</div>`
+            : ''}
+          ${message.og_info.description
+            ? `<div class="og-text">${message.og_info.description}</div>`
+            : message.og_info.title
+                ? `<div class="og-text">${message.og_info.title}</div>`
+                : ''}
+          <div class="og-image">
+            <div id="${cidOg}" class="image-grid"></div>
+          </div>
+        </div>
+      </a>`;
+
+        setTimeout(() => {
+            const c = document.getElementById(cidOg);
+            if (!c) return;
+            renderImagesInBubble(c, [{
+                url:    message.og_info.image,
+                width:  oriW,
+                height: oriH
+            }], {
+                wrapLink: false,
+                maxHeight: DEFAULT_MAX_IMG_HEIGHT,
+                hasReaction: hasReaction,
+            });
+        }, 0);
+    }
+
+    if (!message.msg) {
+        hasImage = '';
+    } 
+
+    // 6. 拼接整体
+    return `
+    <div class="message ${hasImage} ${position} clearfix">
+      <div class="user ${position}">${message.user}</div>
+      ${replyHtml}
+      ${mediaHtml}
+      ${message.msg ? `<div class="msg">${messageContent}</div>` : ''}
+      ${ogHtml}
+      ${reactionsHtml}
+      <div class="date ${position}">${message.date}</div>
+    </div>`;
 }
 
 // 创建可点击的分隔符元素，通过接口按需加载上下文消息
@@ -437,3 +489,90 @@ document.getElementById('chatSelect').addEventListener('change', function () {
         window.location.href = '/chat/' + encodeURIComponent(this.value);
     }
 });
+/**
+ * 计算单张图片最大宽度(px)，基于「气泡」的内容区宽度
+ */
+function calculateMaxImageWidth(containerEl, imagesPerRow = 3, gap = 6) {
+    // 找到最近的气泡容器
+    const bubbleEl = containerEl.closest('.message');
+    const bubbleStyle = window.getComputedStyle(bubbleEl);
+
+    // 气泡内容区真实可用宽度 = clientWidth – 内边距
+    const bubbleInnerWidth = bubbleEl.clientWidth
+        - parseFloat(bubbleStyle.paddingLeft)
+        - parseFloat(bubbleStyle.paddingRight);
+
+    // 每张图可用宽度 = (可用宽 – 间距总和) / 张数
+    return Math.floor(
+        (bubbleInnerWidth - gap * (imagesPerRow - 1))
+        / imagesPerRow
+    );
+}
+
+
+/**
+ * 在 containerEl 容器里等比渲染 imageList，
+ * 并尽量铺满父级气泡的可用宽度
+ */
+function renderImagesInBubble(containerEl, imageList, options = {}) {
+    // 如果只有一张，默认一行一张
+    const imagesPerRow = imageList.length === 1
+        ? 1
+        : (options.maxPerRow || 3);
+
+    const gap = imageList.length === 1
+        ? 0
+        : (options.gap || 1);
+
+    // 计算最大宽高
+    const maxWidth  = calculateMaxImageWidth(containerEl, imagesPerRow, gap);
+    const maxHeight = options.maxHeight || maxWidth;
+
+    // 强制容器铺满气泡宽度
+    containerEl.style.display  = 'flex';
+    containerEl.style.flexWrap = 'wrap';
+    containerEl.style.gap      = `${gap}px`;
+    containerEl.style.width    = '100%';      // 全宽
+    containerEl.style.boxSizing= 'border-box';
+
+    imageList.forEach(img => {
+        const scale = Math.min(maxWidth / img.width, maxHeight / img.height);
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+
+        if (scale === maxHeight / img.height) {
+            const image_bg = document.createElement('img');
+            image_bg.src = img.url.startsWith('http') ? img.url : `/${img.url}`;
+            image_bg.alt = '图片';
+            image_bg.style.width = `100%`;
+            image_bg.style.height = `100%`;
+            image_bg.style.position = 'absolute';
+            image_bg.style.filter = 'blur(15px)';
+            image_bg.style.userSelect = 'none';
+            image_bg.style.pointerEvents = 'none';
+            containerEl.appendChild(image_bg);
+        }
+
+        const image = document.createElement('img');
+        image.src          = img.url.startsWith('http') ? img.url : `/${img.url}`;
+        image.alt          = '图片';
+        image.style.width  = `${w}px`;
+        image.style.height = `${h}px`;
+        image.style.objectFit   = 'cover';
+        // if (options.hasReaction) {
+        //     image.style.marginTop = '0.4rem';
+        // } 
+
+        // 包裹 <a> 链接
+        const link = document.createElement('a');
+        link.href   = `/${img.url}`;
+        link.target = '_blank';
+        link.style.zIndex = '1';
+        link.appendChild(image);
+
+        containerEl.appendChild(link);
+    });
+}
+
+
+

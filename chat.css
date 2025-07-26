@@ -63,12 +63,14 @@ body {
 }
 
 .message {
-    max-width: 60%;
-    margin: 16px;
+    max-width: min(600px, 60vw);
+    margin: 2px;
     border-radius: .9375rem;
     clear: both;
     word-wrap: break-word;
     position: relative;
+    overflow: hidden;
+    min-width: 8.35rem;
 }
 
 .message.left {
@@ -88,15 +90,9 @@ body {
 .date {
     font-size: 0.75rem;
     color: #fff8;
-    margin-bottom: 5px;
-    position: absolute;
-    bottom: -21px;
-    right: 0;
-    width: max-content;
-}
-
-.date.left {
-    left: 0;
+    margin: .2rem 0;
+    width: calc(100% - 10px);
+    text-align: right;
 }
 
 .user {
@@ -106,7 +102,8 @@ body {
 }
 
 .msg {
-    padding: .3125rem .5rem .375rem;
+    margin: .42rem .58rem .22rem;
+    line-height: 1.4rem;
 }
 
 .msg a {
@@ -179,10 +176,6 @@ body {
     border-radius: .9375rem;
 }
 
-.image img {
-    border-radius: .9375rem;
-}
-
 .download {
     padding: .3125rem .5rem .375rem;
 }
@@ -250,7 +243,6 @@ body {
     overflow: hidden;
     text-decoration: none;
     display: block;
-    margin-bottom: 15px;
 }
 
 .og-content {
@@ -358,11 +350,16 @@ body {
 }
 
 .reactions {
-    margin-top: 6px;
+    padding: 0 1rem 0;
+    font-size: 16px;
 }
 
 .reactions span {
     margin-right: 6px;
+    background: #5d5d5d59;
+    border-radius: 3rem;
+    padding: 5px 7px;
+    font-weight: 400;
 }
 
 #chatSelect {
@@ -385,6 +382,26 @@ body {
     left: 0;
     right: 0;
     z-index: 1;
+}
+
+/* 图片网格容器 */
+.image-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+}
+
+/* 单个图片样式 */
+.image-grid img {
+    display: block;
+    object-fit: cover;
+    background-color: #eee;
+}
+.has-image {
+    min-width: min(450px, 45vw);
 }
 
 @media screen and (max-width: 768px) {
@@ -410,11 +427,11 @@ body {
     }
 
     body .date {
-        font-size: 14px;
-        bottom: -23px;
+        font-size: 12px;
     }
 
     .message {
         max-width: 80%;
+        border-radius: 1rem;
     }
 }
