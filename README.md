@@ -1,60 +1,85 @@
-# Telegram Bot 聊天记录导出与HTML生成工具
+# Telegram Chat Archiver and Web Viewer
 
-## 项目简介
+## Overview
+This project exports Telegram chats using the [`tdl`](https://github.com/iyear/tdl) command line tool and presents them through a small Flask web interface.  Messages are saved in SQLite databases, attachments can be downloaded automatically and the viewer fetches Open Graph data for link previews.
 
-该项目包含两个主要功能：
-1. 导出Telegram聊天记录并写入SQLite数据库。
-2. 将保存到数据库中的聊天记录生成HTML文件，并通过简单的服务器进行浏览和搜索。
+## Features
+- Export history via `update_messages.py` and `tdl chat export`.
+- Optional attachment download with `tdl dl`.
+- Parse and store messages in per chat SQLite databases.
+- Basic authenticated web server to manage chats and browse them.
+- Background workers periodically update chats based on saved settings.
+- Searchable HTML viewer with inline media display and link previews.
 
-<img width="1148" height="707" alt="image" src="https://github.com/user-attachments/assets/a9228a08-dc01-4285-a663-1d1d1732c1d2" />
-<img width="877" height="1251" alt="image" src="https://github.com/user-attachments/assets/712303e8-6fcc-4cf4-a21f-8096524e3a9d" />
-<img width="959" height="286" alt="image" src="https://github.com/user-attachments/assets/bac5e773-ade3-417d-9255-aa5704873aeb" />
+## Important Files
+- `update_messages.py` – run `tdl` to export messages and files.
+- `main.py` – coordinates export, parses JSON and saves messages to the database.
+- `server.py` – Flask server providing the management interface and chat pages.
+- `db_utils.py` – SQLite helper utilities.
+- `message_utils.py` – message parsing helpers.
+- `og_utils.py` – fetch Open Graph metadata for links.
+- Frontend assets: `chat.js`, `chat.css`, `index.html`, `template.html`.
+- Example startup scripts: `run.sh` / `run.bat` and `telegrambot.service`.
 
+## Quick Start
+1. Install Python 3 and the `tdl` tool.
+2. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. Log in with `tdl`:
+   ```bash
+   tdl login -T qr
+   ```
+4. Start the server:
+   ```bash
+   BOT_PASSWORD=yourpassword python server.py
+   ```
+   The server listens on `127.0.0.1:8000` and uses basic authentication. Visit `http://localhost:8000/` to add a chat and start its worker. Open `/chat/<chat_id>` to browse messages.
 
-## 文件说明
+## Notes
+- Ensure you have permission to archive the desired Telegram chats.
 
-- `update_messages.py`：负责导出Telegram聊天记录。
-- `main.py`：解析消息并写入数据库，同时生成 HTML 文件所需的数据。
-- `server.py`：从数据库中按需加载聊天记录并支持搜索。
-- `migrate_messages.py`：将旧版 `messages.json` 数据迁移到数据库。
+---
 
-## 使用方法
+# Telegram 聊天记录归档与网页查看器
 
-### 环境准备
+## 简介
+本项目借助 [`tdl`](https://github.com/iyear/tdl) 工具导出 Telegram 聊天记录，将消息保存到 SQLite 数据库，并提供可搜索的网页界面。可以自动下载附件并抓取链接的 Open Graph 预览信息。
 
-1. 确保已安装Python 3.x。
-2. 安装所需的Python库：
-    ```bash
-    pip install pillow
-    ```
-3. 安装[tdl](https://github.com/iyear/tdl)工具：
-    
-4. 使用`tdl login`进行登录：
-    ```bash
-    tdl login -T qr
-    ```
+## 功能
+- 通过 `update_messages.py` 调用 `tdl chat export` 导出聊天记录。
+- 可选地使用 `tdl dl` 下载聊天中的文件。
+- 解析 JSON 数据并写入各聊天对应的 SQLite 数据库。
+- Flask 服务器提供基本认证和管理界面，可启动后台线程定期更新聊天。
+- 浏览聊天时支持搜索、无限滚动、媒体展示以及链接预览。
+- 所有数据存放在 `data/` 与 `downloads/` 目录下。
 
-### 迁移旧版 JSON 数据
+## 重要文件
+- `update_messages.py`：封装 `tdl` 导出聊天和附件。
+- `main.py`：协调导出、解析 JSON 并写入数据库。
+- `server.py`：Flask 服务器，提供管理界面及聊天页面。
+- `db_utils.py`：SQLite 操作辅助函数。
+- `message_utils.py`：消息解析工具。
+- `og_utils.py`：抓取链接的 Open Graph 数据。
+- 前端资源：`chat.js`、`chat.css`、`index.html`、`template.html`。
+- 启动脚本示例：`run.sh`、`run.bat`、`telegrambot.service`。
 
-若之前的版本生成过 `messages.json` 文件，可以使用以下脚本将其迁移到数据库：
-```bash
-python migrate_messages.py <user_id>
-```
+## 快速开始
+1. 安装 Python 3 与 `tdl` 工具。
+2. 安装依赖：
+   ```bash
+   pip install -r requirements.txt
+   ```
+3. 使用 `tdl` 登录：
+   ```bash
+   tdl login -T qr
+   ```
+4. 启动服务器：
+   ```bash
+   BOT_PASSWORD=你的密码 python server.py
+   ```
+   服务器默认在 `127.0.0.1:8000` 监听，并启用基本认证。访问 `http://localhost:8000/` 添加聊天后启动后台线程，再在 `/chat/<chat_id>` 查看聊天记录。
 
-### 启动服务器查看聊天记录
-
-导出并生成 HTML 后，可以启动内置服务器：
-```bash
-BOT_PASSWORD=你的密码 python server.py
-```
-服务器默认只监听本机的 `127.0.0.1`，并启用基本认证。访问
-`http://localhost:5000/chat/<user_id>` 时浏览器会询问用户名和密码，默
-认用户名为 `user`，密码由 `BOT_PASSWORD` 环境变量指定。
-启动服务器后，也可以访问根地址 `/`，在网页表单中填写聊天 ID、备注，并选择是否下载文件、导出全部消息及原始数据来新增聊天记录。这些设置会保存到 `chats.json`，重启后仍会生效。服务器启动时会自动读取 `chats.json`，并为其中的每个聊天启动后台导出线程。
-
-静态文件会从根路径提供，例如 `http://localhost:5000/resources/bg.png`、
-`http://localhost:5000/fonts/Roboto-Regular.ttf` 和 `/downloads/<user_id>/...`。
-
-## 注意事项
-
-- 确保你有权限访问Telegram聊天记录。
+## 注意
+- 请确保有权限访问并归档相应的 Telegram 聊天。
