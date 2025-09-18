@@ -1,203 +1,560 @@
-<html>
-
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
   <title>聊天频道管理</title>
   <style>
+    :root {
+      color-scheme: dark;
+      --bg-color: #0b1120;
+      --panel-color: rgba(15, 23, 42, 0.72);
+      --panel-strong: rgba(15, 23, 42, 0.88);
+      --border-color: rgba(148, 163, 184, 0.2);
+      --accent: #38bdf8;
+      --accent-strong: #0ea5e9;
+      --accent-soft: rgba(56, 189, 248, 0.15);
+      --text-strong: #f8fafc;
+      --text-muted: #94a3b8;
+      --success: #4ade80;
+      --danger: #f87171;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text-strong);
+      background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.12), transparent 45%),
+        radial-gradient(circle at 80% 0%, rgba(14, 165, 233, 0.18), transparent 40%),
+        linear-gradient(160deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.97)),
+        var(--bg-color);
+      min-height: 100vh;
+      padding: 48px 24px 64px;
+      display: flex;
+      justify-content: center;
+    }
+
+    .page {
+      width: min(1120px, 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    .surface {
+      background: var(--panel-color);
+      border: 1px solid var(--border-color);
+      border-radius: 22px;
+      padding: 28px;
+      backdrop-filter: blur(18px);
+      box-shadow: 0 28px 60px -40px rgba(7, 14, 35, 0.8);
+    }
+
+    .page-header {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 18px 32px;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    h1 {
+      font-size: clamp(26px, 3vw, 36px);
+      line-height: 1.1;
+      margin: 0;
+      letter-spacing: 0.02em;
+    }
+
+    .subtitle {
+      margin: 6px 0 0;
+      color: var(--text-muted);
+      max-width: 540px;
+      font-size: 15px;
+    }
+
+    button {
+      appearance: none;
+      border: none;
+      border-radius: 999px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+      color: var(--text-strong);
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      padding: 13px 28px;
+      cursor: pointer;
+      transition: transform 0.18s ease, box-shadow 0.25s ease, background 0.25s ease, opacity 0.25s ease;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 18px 38px -24px rgba(14, 165, 233, 0.9);
+    }
+
+    button:focus-visible {
+      outline: 3px solid rgba(56, 189, 248, 0.35);
+      outline-offset: 3px;
+    }
+
+    button:disabled {
+      background: rgba(74, 222, 128, 0.12);
+      color: var(--success);
+      border: 1px solid rgba(74, 222, 128, 0.4);
+      cursor: default;
+      box-shadow: none;
+    }
+
+    .card-title {
+      margin: 0 0 18px;
+      font-size: 20px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+    }
+
+    .card-subtitle {
+      margin: -12px 0 22px;
+      color: var(--text-muted);
+      font-size: 14px;
+    }
+
+    form {
+      margin: 0;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 18px 20px;
+      align-items: end;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-muted);
+      font-size: 14px;
+      user-select: none;
+    }
+
+    input[type="text"],
+    textarea {
+      width: 100%;
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      border-radius: 14px;
+      padding: 12px 14px;
+      background: var(--panel-strong);
+      color: var(--text-strong);
+      font-size: 15px;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease;
+    }
+
+    input[type="text"]::placeholder,
+    textarea::placeholder {
+      color: rgba(148, 163, 184, 0.55);
+    }
+
+    input[type="text"]:focus,
+    textarea:focus {
+      border-color: rgba(56, 189, 248, 0.7);
+      box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
+      outline: none;
+    }
+
+    input[type="checkbox"],
+    input[type="radio"] {
+      accent-color: var(--accent-strong);
+      cursor: pointer;
+    }
+
+    .toggle-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 18px;
+    }
+
+    #addButton {
+      justify-self: start;
+      padding-inline: 24px;
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.96), rgba(14, 165, 233, 0.92));
+    }
+
+    #addButton:hover {
+      box-shadow: 0 18px 36px -26px rgba(14, 165, 233, 1);
+    }
+
+    #chatList {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 14px;
+    }
+
+    #chatList li {
+      margin: 0;
+    }
+
+    .chat-item {
+      background: rgba(15, 23, 42, 0.55);
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      border-radius: 16px;
+      transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.25s ease;
+    }
+
+    .chat-item label {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 14px 18px;
+      color: var(--text-strong);
+    }
+
+    .chat-item a {
+      color: inherit;
+      font-weight: 600;
+      text-decoration: none;
+      letter-spacing: 0.01em;
+    }
+
+    .chat-item:hover {
+      border-color: rgba(56, 189, 248, 0.45);
+      transform: translateY(-1px);
+      box-shadow: 0 16px 32px -28px rgba(14, 165, 233, 0.7);
+    }
+
+    textarea {
+      min-height: 140px;
+      resize: vertical;
+    }
+
+    .sql-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 16px;
+    }
+
+    .sql-actions button {
+      padding-inline: 22px;
+    }
+
+    #sqlResult {
+      margin: 22px 0 0;
+      background: rgba(15, 23, 42, 0.78);
+      border: 1px solid rgba(148, 163, 184, 0.22);
+      border-radius: 16px;
+      padding: 18px;
+      font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+      font-size: 13px;
+      line-height: 1.6;
+      color: rgba(203, 213, 225, 0.92);
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 360px;
+      overflow: auto;
+    }
+
+    .helper-text {
+      color: var(--text-muted);
+      font-size: 13px;
+      margin-top: -6px;
+    }
+
+    .toast {
+      position: fixed;
+      top: 24px;
+      right: 24px;
+      z-index: 1100;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 240px;
+      max-width: 320px;
+      padding: 14px 18px;
+      border-radius: 16px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(148, 163, 184, 0.35);
+      box-shadow: 0 24px 48px -32px rgba(7, 14, 35, 0.9);
+      opacity: 0;
+      transform: translateY(-12px);
+      pointer-events: none;
+      transition: opacity 0.3s ease, transform 0.3s ease;
+    }
+
+    .toast--visible {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .toast--info {
+      background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(14, 165, 233, 0.28));
+      border-color: rgba(56, 189, 248, 0.55);
+    }
+
+    .toast--error {
+      background: linear-gradient(135deg, rgba(248, 113, 113, 0.24), rgba(248, 113, 113, 0.32));
+      border-color: rgba(248, 113, 113, 0.55);
+    }
+
+    .toast__message {
+      flex: 1;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .toast__close {
+      appearance: none;
+      border: none;
+      background: rgba(15, 23, 42, 0.2);
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      color: var(--text-strong);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.2s ease, transform 0.2s ease;
+    }
+
+    .toast__close:hover {
+      background: rgba(15, 23, 42, 0.4);
+      transform: scale(1.05);
+    }
+
+    @media (max-width: 720px) {
       body {
-          font-family: Arial, sans-serif;
-          padding: 20px;
-          background: #000;
-          color: #fff;
+        padding: 32px 16px 48px;
       }
 
-      input[type="number"]::-webkit-inner-spin-button,
-      input[type="number"]::-webkit-outer-spin-button {
-          -webkit-appearance: none;
-          margin: 0;
+      .surface {
+        padding: 22px;
       }
 
-      input,
-      button {
-          padding: 6px;
-          margin: 4px;
-          background: #020202;
-          border: 1px solid #8383835c;
-          color: #f3f3f3;
-          outline: none;
+      h1 {
+        font-size: 26px;
       }
 
-      ul {
-          list-style: none;
-          padding: 0;
+      .sql-actions {
+        justify-content: stretch;
       }
 
-      li {
-          margin: 5px 0;
+      .sql-actions button {
+        width: 100%;
       }
 
-      label {
-          user-select: none;
+      .toast {
+        left: 16px;
+        right: 16px;
+        top: auto;
+        bottom: 24px;
       }
-
-      #startWorkers {
-          cursor: pointer;
-          transition: background 0.2s;
-      }
-
-      #startWorkers:hover:not(:disabled) {
-          background: rgb(114, 114, 114);
-      }
-
-      #startWorkers:disabled {
-          background: rgb(83, 251, 2);
-          color: #000;
-      }
-
-      a {
-          text-decoration: none;
-          color: #ff7700;
-      }
-
-      #addButton {
-          cursor: pointer;
-          transition: background 0.2s;
-      }
-
-      #addButton:hover {
-          background: #333333;
-      }
+    }
   </style>
 </head>
-
 <body>
-<h1>聊天频道管理</h1>
-<button id="startWorkers">启动Workers</button>
-<form id="addForm">
-  <input type="text" id="chatId" placeholder="聊天ID" required />
-  <input type="text" id="remark" placeholder="备注(可选)" />
-  <label><input type="checkbox" id="downloadFiles" checked />下载附件</label>
-  <label><input type="checkbox" id="allMessages" checked />导出全部消息</label>
-  <label><input type="checkbox" id="rawMessages" checked />导出原始数据</label>
-  <button id="addButton" type="submit">添加</button>
-</form>
-<ul id="chatList"></ul>
+  <div id="toast" class="toast" role="status" aria-live="polite">
+    <span id="toastMessage" class="toast__message"></span>
+    <button id="toastClose" class="toast__close" type="button" aria-label="关闭提示">×</button>
+  </div>
 
-<textarea id="sql_str" rows="5" cols="60" placeholder="写 SQL..."></textarea><br>
-<button onclick="executeSQL()">执行 SQL</button>
+  <div class="page">
+    <header class="page-header surface">
+      <div>
+        <h1>聊天频道管理</h1>
+        <p class="subtitle">快速添加聊天频道、调整导出选项，并在同一处查看配置或执行 SQL 调试。</p>
+      </div>
+      <button id="startWorkers" type="button">启动 Workers</button>
+    </header>
 
-<pre id="sqlResult"></pre>
-<script>
+    <section class="surface">
+      <h2 class="card-title">新增频道</h2>
+      <p class="card-subtitle">填写聊天 ID 与备注信息，并选择需要启用的导出选项。</p>
+      <form id="addForm" class="form-grid">
+        <div>
+          <input type="text" id="chatId" placeholder="聊天 ID" required />
+          <p class="helper-text">支持频道、群组或私聊 ID。</p>
+        </div>
+        <div>
+          <input type="text" id="remark" placeholder="备注（可选）" />
+          <p class="helper-text">此备注将展示在下方的频道列表中。</p>
+        </div>
+        <div class="toggle-grid">
+          <label><input type="checkbox" id="downloadFiles" checked />下载附件</label>
+          <label><input type="checkbox" id="allMessages" checked />导出全部消息</label>
+          <label><input type="checkbox" id="rawMessages" checked />导出原始数据</label>
+        </div>
+        <button id="addButton" type="submit">添加频道</button>
+      </form>
+    </section>
+
+    <section class="surface">
+      <h2 class="card-title">已配置的聊天频道</h2>
+      <p class="card-subtitle">选择一个频道可预览导出内容或用于下方 SQL 查询。</p>
+      <ul id="chatList"></ul>
+    </section>
+
+    <section class="surface">
+      <h2 class="card-title">SQL 调试工具</h2>
+      <p class="card-subtitle">针对选中的聊天频道执行 SQL，并查看原始返回数据。</p>
+      <textarea id="sql_str" placeholder="输入 SQL..."></textarea>
+      <div class="sql-actions">
+        <button type="button" onclick="executeSQL()">执行 SQL</button>
+      </div>
+      <pre id="sqlResult"></pre>
+    </section>
+  </div>
+
+  <script>
+    const toast = document.getElementById('toast');
+    const toastMessage = document.getElementById('toastMessage');
+    const toastClose = document.getElementById('toastClose');
+    let toastTimer = null;
+
+    function showToast(message, variant = 'info') {
+      if (!toast || !toastMessage) return;
+      toast.classList.remove('toast--visible', 'toast--info', 'toast--error');
+      void toast.offsetWidth;
+      toastMessage.textContent = message;
+      toast.classList.add(`toast--${variant}`);
+      requestAnimationFrame(() => {
+        toast.classList.add('toast--visible');
+      });
+      if (toastTimer) clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('toast--visible');
+      }, 3200);
+    }
+
+    if (toastClose) {
+      toastClose.addEventListener('click', () => {
+        toast.classList.remove('toast--visible');
+        if (toastTimer) clearTimeout(toastTimer);
+      });
+    }
+
     let selectedChatId = null;
 
     function loadChats() {
-        fetch('/chats')
-            .then(r => r.json())
-            .then(data => {
-                const ul = document.getElementById('chatList');
-                ul.innerHTML = '';
-                data.chats.forEach(chat => {
-                    const li = document.createElement('li');
+      fetch('/chats')
+        .then(r => r.json())
+        .then(data => {
+          const ul = document.getElementById('chatList');
+          ul.innerHTML = '';
+          data.chats.forEach(chat => {
+            const li = document.createElement('li');
+            li.className = 'chat-item';
 
-                    const radio = document.createElement('input');
-                    radio.type = 'radio';
-                    radio.name = 'chatSelect';
-                    radio.value = chat.id;
+            const label = document.createElement('label');
+            label.className = 'chat-label';
 
-                    radio.addEventListener('change', () => {
-                        selectedChatId = chat.id;
-                        console.log("选中 chat_id:", selectedChatId);
-                    });
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'chatSelect';
+            radio.value = chat.id;
 
-                    const label = document.createElement('label');
-                    label.prepend(radio);
-                    
-                    const a = document.createElement('a');
-                    a.href = '/chat/' + encodeURIComponent(chat.id);
-                    a.textContent = chat.remark || chat.id;
-
-                    label.appendChild(a);
-                    li.appendChild(label);
-                    ul.appendChild(li);
-                });
+            radio.addEventListener('change', () => {
+              selectedChatId = chat.id;
+              console.log('选中 chat_id:', selectedChatId);
             });
+
+            const link = document.createElement('a');
+            link.href = '/chat/' + encodeURIComponent(chat.id);
+            link.textContent = chat.remark || chat.id;
+
+            label.appendChild(radio);
+            label.appendChild(link);
+            li.appendChild(label);
+            ul.appendChild(li);
+          });
+        });
     }
 
     document.getElementById('addForm').addEventListener('submit', e => {
-        e.preventDefault();
-        const id = document.getElementById('chatId').value.trim();
-        const remark = document.getElementById('remark').value.trim();
-        const download = document.getElementById('downloadFiles').checked;
-        const allMsg = document.getElementById('allMessages').checked;
-        const rawMsg = document.getElementById('rawMessages').checked;
-        if (!id) return;
-        fetch('/add_chat', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: id,
-                remark: remark,
-                download_files: download,
-                all_messages: allMsg,
-                raw_messages: rawMsg
-            })
+      e.preventDefault();
+      const id = document.getElementById('chatId').value.trim();
+      const remark = document.getElementById('remark').value.trim();
+      const download = document.getElementById('downloadFiles').checked;
+      const allMsg = document.getElementById('allMessages').checked;
+      const rawMsg = document.getElementById('rawMessages').checked;
+      if (!id) {
+        showToast('请填写聊天 ID 后再添加频道。', 'error');
+        return;
+      }
+      fetch('/add_chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: id,
+          remark: remark,
+          download_files: download,
+          all_messages: allMsg,
+          raw_messages: rawMsg
         })
-            .then(r => r.json())
-            .then(() => {
-                document.getElementById('chatId').value = '';
-                document.getElementById('remark').value = '';
-                document.getElementById('downloadFiles').checked = true;
-                document.getElementById('allMessages').checked = true;
-                document.getElementById('rawMessages').checked = true;
-                loadChats();
-            });
+      })
+        .then(r => r.json())
+        .then(() => {
+          document.getElementById('chatId').value = '';
+          document.getElementById('remark').value = '';
+          document.getElementById('downloadFiles').checked = true;
+          document.getElementById('allMessages').checked = true;
+          document.getElementById('rawMessages').checked = true;
+          showToast('频道已添加到列表。');
+          loadChats();
+        });
     });
+
     function checkWorkers() {
-        fetch('/workers_status')
-            .then(r => r.json())
-            .then(data => {
-                const btn = document.getElementById('startWorkers');
-                if (data.started) {
-                    btn.disabled = true;
-                    btn.textContent = 'Workers 已启动';
-                } else {
-                    btn.disabled = false;
-                    btn.textContent = '启动Workers';
-                }
-            });
+      fetch('/workers_status')
+        .then(r => r.json())
+        .then(data => {
+          const btn = document.getElementById('startWorkers');
+          if (data.started) {
+            btn.disabled = true;
+            btn.textContent = 'Workers 已启动';
+          } else {
+            btn.disabled = false;
+            btn.textContent = '启动 Workers';
+          }
+        });
     }
 
     document.getElementById('startWorkers').addEventListener('click', () => {
-        fetch('/start_workers', { method: 'POST' })
-            .then(() => checkWorkers());
+      fetch('/start_workers', { method: 'POST' })
+        .then(() => checkWorkers());
     });
 
     document.addEventListener('DOMContentLoaded', () => {
-        loadChats();
-        checkWorkers();
+      loadChats();
+      checkWorkers();
     });
-</script>
+  </script>
 
-<script>
+  <script>
     async function executeSQL() {
-        if (!selectedChatId) {
-            alert("请先选择一个 Chat ID！");
-            return;
-        }
+      if (!selectedChatId) {
+        showToast('请先选择一个 Chat ID。', 'error');
+        return;
+      }
 
-        const sqlStr = document.getElementById("sql_str").value;
-        const res = await fetch('/execute_sql', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                chat_id: selectedChatId,
-                sql_str: sqlStr
-            })
-        });
-        const data = await res.json();
-        document.getElementById("sqlResult").innerText = JSON.stringify(data, null, 2);
+      const sqlStr = document.getElementById('sql_str').value;
+      const res = await fetch('/execute_sql', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: selectedChatId,
+          sql_str: sqlStr
+        })
+      });
+      const data = await res.json();
+      document.getElementById('sqlResult').innerText = JSON.stringify(data, null, 2);
+      showToast('SQL 已执行完成。');
     }
-</script>
+  </script>
 </body>
-
 </html>
