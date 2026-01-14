@@ -1,6 +1,7 @@
 import os
 import json
 import subprocess
+import atexit
 
 from project_logger import get_logger
 from db_utils import get_connection, get_db_path
@@ -22,18 +23,131 @@ CHATS_FILE = os.path.join(script_dir, 'chats.json')
 WORKERS_FLAG = os.path.join(script_dir, 'workers_started.flag')
 
 _workers_started = False
+_workers_lock_handle = None
 
 def workers_started():
-    return _workers_started or os.path.exists(WORKERS_FLAG)
+    if _workers_started:
+        return True
+
+    if not os.path.exists(WORKERS_FLAG):
+        return False
+
+    try:
+        with open(WORKERS_FLAG, 'a+b') as f:
+            if _try_acquire_file_lock(f):
+                _release_file_lock(f)
+                return False
+            return True
+    except OSError:
+        return False
+
+
+def _try_acquire_file_lock(file_handle) -> bool:
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            file_handle.seek(0)
+            msvcrt.locking(file_handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(file_handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def _release_file_lock(file_handle) -> None:
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            file_handle.seek(0)
+            msvcrt.locking(file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(file_handle.fileno(), fcntl.LOCK_UN)
+    except OSError:
+        pass
+
+
+def _cleanup_stale_workers_flag() -> None:
+    if not os.path.exists(WORKERS_FLAG):
+        return
+
+    try:
+        with open(WORKERS_FLAG, 'a+b') as f:
+            if not _try_acquire_file_lock(f):
+                return
+    except OSError:
+        return
+
+    try:
+        os.remove(WORKERS_FLAG)
+    except OSError:
+        pass
+
+
+_cleanup_stale_workers_flag()
 
 def mark_workers_started():
     global _workers_started
-    _workers_started = True
+    global _workers_lock_handle
+
+    if _workers_started:
+        return True
+
     try:
-        with open(WORKERS_FLAG, 'w', encoding='utf-8') as f:
-            f.write('started')
+        f = open(WORKERS_FLAG, 'a+b')
+    except OSError as e:
+        logger.error(f'Error opening {WORKERS_FLAG}: {e}')
+        return False
+
+    if not _try_acquire_file_lock(f):
+        f.close()
+        return False
+
+    _workers_lock_handle = f
+    _workers_started = True
+
+    try:
+        payload = json.dumps(
+            {'pid': os.getpid(), 'started_at': int(time.time())},
+            ensure_ascii=False,
+        ).encode('utf-8')
+        f.seek(0)
+        f.truncate()
+        f.write(payload)
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except OSError:
+            pass
     except Exception as e:
         logger.error(f'Error writing {WORKERS_FLAG}: {e}')
+
+    return True
+
+
+def _release_workers_lock() -> None:
+    global _workers_lock_handle
+    if _workers_lock_handle is None:
+        return
+
+    try:
+        _release_file_lock(_workers_lock_handle)
+    finally:
+        try:
+            _workers_lock_handle.close()
+        except OSError:
+            pass
+        _workers_lock_handle = None
+
+    try:
+        os.remove(WORKERS_FLAG)
+    except OSError:
+        pass
+
+
+atexit.register(_release_workers_lock)
 
 def load_chats():
     if os.path.exists(CHATS_FILE):
@@ -73,7 +187,8 @@ def start_chat_worker(chat, interval=1800):
 def start_saved_chat_workers():
     if workers_started():
         return False
-    mark_workers_started()
+    if not mark_workers_started():
+        return False
     for chat in load_chats():
         if chat.get('id'):
             start_chat_worker(chat)
