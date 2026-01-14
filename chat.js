@@ -9,6 +9,12 @@ let oldestIndex = 0;
 let totalMessages = 0;
 const DEFAULT_MAX_IMG_HEIGHT = window.innerHeight * 0.5;
 
+let isReactionSorting = false;
+let reactionEmoticon = '';
+let reactionOffset = 0;
+let reactionTotal = 0;
+let isLoadingReactionMessages = false;
+
 // 动态加载 JSON 数据
 function fetchMessages(offset, limit) {
     return fetch(`../messages/${chatId}?offset=${offset}&limit=${limit}`)
@@ -18,6 +24,93 @@ function fetchMessages(offset, limit) {
             }
             return response.json();
         });
+}
+
+function fetchReactionEmoticons() {
+    return fetch(`../reactions_emoticons/${chatId}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('无法加载 reactions 表情列表');
+            }
+            return response.json();
+        });
+}
+
+function fetchMessagesByReaction(emoticon, offset, limit) {
+    return fetch(`../messages_by_reaction/${chatId}?emoticon=${encodeURIComponent(emoticon)}&offset=${offset}&limit=${limit}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('无法加载 reactions 排序消息');
+            }
+            return response.json();
+        });
+}
+
+function resetReactionSortingState() {
+    isReactionSorting = false;
+    reactionEmoticon = '';
+    reactionOffset = 0;
+    reactionTotal = 0;
+    isLoadingReactionMessages = false;
+}
+
+function setReactionSorting(emoticon) {
+    const picked = (emoticon || '').trim();
+    if (!picked) {
+        resetReactionSortingState();
+        messagesContainer.innerHTML = '';
+        loadMessages();
+        return;
+    }
+
+    isSearching = false;
+    isReactionSorting = true;
+    reactionEmoticon = picked;
+    reactionOffset = 0;
+    reactionTotal = 0;
+    messagesContainer.innerHTML = '';
+    overlay.classList.remove('hidden');
+    loadMoreReactionMessages(true);
+}
+
+async function loadMoreReactionMessages(isInitial = false) {
+    if (!isReactionSorting || isLoadingReactionMessages) return;
+    if (!isInitial && reactionTotal > 0 && reactionOffset >= reactionTotal) return;
+
+    isLoadingReactionMessages = true;
+    try {
+        const data = await fetchMessagesByReaction(reactionEmoticon, reactionOffset, pageSize);
+        reactionTotal = data.total || 0;
+        const batch = Array.isArray(data.messages) ? data.messages : [];
+        if (batch.length === 0) return;
+
+        reactionOffset += batch.length;
+
+        // 为了保持“聊天”阅读习惯：把 Count 更高的放在更靠下的位置（底部最重要）
+        const ordered = batch.slice().reverse();
+
+        let html = '';
+        for (const m of ordered) {
+            html += createMessageHtml(m, m.msg_id, '');
+        }
+
+        if (isInitial) {
+            messagesContainer.innerHTML = html;
+            await waitForMediaToLoad();
+            window.scrollTo(0, document.body.scrollHeight);
+        } else {
+            const prevHeight = document.body.scrollHeight;
+            messagesContainer.insertAdjacentHTML('afterbegin', html);
+            await waitForMediaToLoad();
+            const newHeight = document.body.scrollHeight;
+            window.scrollTo(0, window.scrollY + (newHeight - prevHeight));
+        }
+    } catch (error) {
+        console.error('加载 reactions 排序消息失败:', error);
+    } finally {
+        isLoadingReactionMessages = false;
+        if (isInitial) overlay.classList.add('hidden');
+    }
 }
 
 function loadMessages() {
@@ -104,8 +197,16 @@ function createMessageHtml(message, index, searchValue) {
             : message.reactions;
         if (r.Results?.length) {
             hasReaction = true;
+            const sortedResults = [...r.Results].sort((a, b) => {
+                const countA = Number(a?.Count ?? 0);
+                const countB = Number(b?.Count ?? 0);
+                if (countA !== countB) return countB - countA;
+                const emoA = String(a?.Reaction?.Emoticon ?? '');
+                const emoB = String(b?.Reaction?.Emoticon ?? '');
+                return emoA.localeCompare(emoB);
+            });
             reactionsHtml = `<div class="reactions">` +
-                r.Results.map(e => `<span>${e.Reaction.Emoticon} ${e.Count}</span>`).join('') +
+                sortedResults.map(e => `<span>${e.Reaction.Emoticon} ${e.Count}</span>`).join('') +
                 `</div>`;
         }
     }
@@ -402,7 +503,11 @@ let debounceTimer;
 function checkScroll() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function () {
-        if (!isSearching && window.scrollY < 50 && oldestIndex > 0) {
+        if (isReactionSorting && window.scrollY < 50) {
+            loadMoreReactionMessages(false);
+            return;
+        }
+        if (!isSearching && !isReactionSorting && window.scrollY < 50 && oldestIndex > 0) {
             loadOlderMessagesWithScrollAdjustment();
         }
     }, 200);
@@ -413,6 +518,11 @@ window.addEventListener('scroll', checkScroll);
 // 搜索函数，服务器返回匹配消息及其索引，非连续组之间插入加载按钮
 function searchMessages() {
     overlay.classList.remove('hidden');
+    if (isReactionSorting) {
+        const reactionSelect = document.getElementById('reactionSelect');
+        if (reactionSelect) reactionSelect.value = '';
+        resetReactionSortingState();
+    }
     const searchValue = document.getElementById('searchBox').value.trim().toLowerCase();
     if (!searchValue) {
         isSearching = false;
@@ -489,6 +599,36 @@ document.getElementById('chatSelect').addEventListener('change', function () {
         window.location.href = encodeURIComponent(this.value);
     }
 });
+
+function loadReactionEmoticons() {
+    const reactionSelect = document.getElementById('reactionSelect');
+    if (!reactionSelect) return;
+
+    reactionSelect.innerHTML = '<option value=\"\">按表情(Reaction)排序</option>';
+    fetchReactionEmoticons()
+        .then(data => {
+            const items = Array.isArray(data.emoticons) ? data.emoticons : [];
+            items.forEach(item => {
+                const emo = item.emoticon;
+                if (!emo) return;
+                const count = Number(item.count ?? 0);
+                const opt = document.createElement('option');
+                opt.value = emo;
+                opt.textContent = count > 0 ? `${emo} (${count})` : String(emo);
+                reactionSelect.appendChild(opt);
+            });
+        })
+        .catch(err => console.error(err));
+}
+
+document.addEventListener('DOMContentLoaded', loadReactionEmoticons);
+
+const reactionSelectEl = document.getElementById('reactionSelect');
+if (reactionSelectEl) {
+    reactionSelectEl.addEventListener('change', function () {
+        setReactionSorting(this.value);
+    });
+}
 /**
  * 计算单张图片最大宽度(px)，基于「气泡」的内容区宽度
  */

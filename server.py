@@ -291,6 +291,51 @@ def row_to_message(row):
             item['reactions'] = None
     return item
 
+
+def _parse_reactions_blob(blob):
+    if not blob:
+        return None
+    if isinstance(blob, dict):
+        return blob
+    try:
+        return json.loads(blob)
+    except Exception:
+        return None
+
+
+def _iter_reaction_emoticon_counts(reactions_obj):
+    if not isinstance(reactions_obj, dict):
+        return
+    results = reactions_obj.get('Results') or []
+    if not isinstance(results, list):
+        return
+
+    for entry in results:
+        if not isinstance(entry, dict):
+            continue
+        reaction = entry.get('Reaction') or {}
+        if not isinstance(reaction, dict):
+            continue
+        emoticon = reaction.get('Emoticon')
+        if not emoticon:
+            continue
+
+        count = entry.get('Count', 0)
+        try:
+            count = int(count)
+        except Exception:
+            count = 0
+        yield emoticon, max(count, 0)
+
+
+def _get_reaction_count_for_emoticon(reactions_obj, target_emoticon: str) -> int:
+    if not target_emoticon:
+        return 0
+    for emoticon, count in _iter_reaction_emoticon_counts(reactions_obj):
+        if emoticon == target_emoticon:
+            return count
+    return 0
+
 @app.route('/chat/<chat_id>')
 def chat_page(chat_id):
     return render_template('template.html', chat_id=chat_id)
@@ -385,6 +430,97 @@ def get_message(chat_id, msg_id):
             message['reply_message'] = row_to_message(r)
     conn.close()
     return jsonify(message)
+
+
+@app.route('/reactions_emoticons/<chat_id>')
+def get_reactions_emoticons(chat_id):
+    conn = get_db(chat_id)
+    if not conn:
+        return jsonify({'emoticons': []})
+
+    totals = {}
+    cur = conn.cursor()
+    cur.execute('SELECT reactions FROM messages WHERE chat_id=? AND reactions IS NOT NULL', (chat_id,))
+    for row in cur.fetchall():
+        reactions_obj = _parse_reactions_blob(row['reactions'])
+        for emoticon, count in _iter_reaction_emoticon_counts(reactions_obj):
+            totals[emoticon] = totals.get(emoticon, 0) + count
+
+    conn.close()
+    emoticons = [
+        {'emoticon': e, 'count': totals[e]}
+        for e in sorted(totals.keys(), key=lambda k: (-totals[k], k))
+    ]
+    return jsonify({'emoticons': emoticons})
+
+
+@app.route('/messages_by_reaction/<chat_id>')
+def get_messages_by_reaction(chat_id):
+    emoticon = request.args.get('emoticon', '').strip()
+    if not emoticon:
+        return jsonify({'error': 'emoticon required'}), 400
+
+    conn = get_db(chat_id)
+    if not conn:
+        return jsonify({'total': 0, 'offset': 0, 'messages': []})
+
+    offset = int(request.args.get('offset', 0))
+    limit = int(request.args.get('limit', 20))
+    offset = max(offset, 0)
+    limit = max(1, min(limit, 100))
+
+    cur = conn.cursor()
+    cur.execute(
+        'SELECT msg_id, timestamp, reactions FROM messages WHERE chat_id=? AND reactions IS NOT NULL',
+        (chat_id,),
+    )
+
+    scored = []
+    for row in cur.fetchall():
+        reactions_obj = _parse_reactions_blob(row['reactions'])
+        count = _get_reaction_count_for_emoticon(reactions_obj, emoticon)
+        if count > 0:
+            scored.append((count, int(row['timestamp'] or 0), int(row['msg_id'])))
+
+    scored.sort(key=lambda t: (-t[0], -t[1], -t[2]))
+    total = len(scored)
+
+    page = scored[offset:offset + limit]
+    msg_ids = [t[2] for t in page]
+    counts_by_msg_id = {t[2]: t[0] for t in page}
+
+    messages = []
+    if msg_ids:
+        placeholders = ','.join(['?'] * len(msg_ids))
+        cur.execute(
+            f'SELECT * FROM messages WHERE chat_id=? AND msg_id IN ({placeholders})',
+            (chat_id, *msg_ids),
+        )
+        rows = cur.fetchall()
+        rows_by_id = {int(r['msg_id']): r for r in rows}
+
+        for mid in msg_ids:
+            row = rows_by_id.get(int(mid))
+            if not row:
+                continue
+            item = row_to_message(row)
+            item['reaction_sort_emoticon'] = emoticon
+            item['reaction_sort_count'] = counts_by_msg_id.get(int(mid), 0)
+
+            if item.get('reply_to_msg_id'):
+                cur2 = conn.cursor()
+                cur2.execute(
+                    'SELECT * FROM messages WHERE chat_id=? AND msg_id=?',
+                    (chat_id, item['reply_to_msg_id']),
+                )
+                r = cur2.fetchone()
+                if r:
+                    item['reply_message'] = row_to_message(r)
+
+            messages.append(item)
+
+    conn.close()
+    return jsonify({'total': total, 'offset': offset, 'messages': messages})
                 
 @app.route('/search/<chat_id>')
 def search_messages(chat_id):
