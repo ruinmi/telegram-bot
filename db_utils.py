@@ -84,6 +84,16 @@ def get_exported_time(conn):
 def set_exported_time(conn, value):
     conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('exported_time', ?)", (str(value),))
     conn.commit()
+    
+def set_workers_status(conn, status: str):
+    conn.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('workers_status', ?)", (str(status),))
+    conn.commit()
+
+def get_workers_status(conn) -> str:
+    cur = conn.cursor()
+    cur.execute("SELECT value FROM meta WHERE key='workers_status'")
+    row = cur.fetchone()
+    return row[0] if row else '0'
 
 def update_og_info(conn, chat_id, og_fetcher):
     cursor = conn.cursor()

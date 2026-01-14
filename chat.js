@@ -11,7 +11,7 @@ const DEFAULT_MAX_IMG_HEIGHT = window.innerHeight * 0.5;
 
 // 动态加载 JSON 数据
 function fetchMessages(offset, limit) {
-    return fetch(`/messages/${chatId}?offset=${offset}&limit=${limit}`)
+    return fetch(`../messages/${chatId}?offset=${offset}&limit=${limit}`)
         .then(response => {
             if (!response.ok) {
                 throw new Error('无法加载消息数据');
@@ -117,7 +117,7 @@ function createMessageHtml(message, index, searchValue) {
 
         if (d.msg_file_name && /\.(png|jpe?g|gif|webp)$/i.test(d.msg_file_name)) {
             imgPart = `<div class="reply-image">
-                   <img src="/${d.msg_file_name}" alt="图片">
+                   <img src="${d.msg_file_name}" alt="图片">
                  </div>`;
         } else if (d.msg_files) {
             const files = Array.isArray(d.msg_files)
@@ -125,7 +125,7 @@ function createMessageHtml(message, index, searchValue) {
                 : JSON.parse(d.msg_files);
             imgPart = files.map(fn =>
                 /\.(png|jpe?g|gif|webp)$/i.test(fn)
-                    ? `<div class="reply-image"><img src="/${fn}" alt="图片"></div>`
+                    ? `<div class="reply-image"><img src="${fn}" alt="图片"></div>`
                     : ''
             ).join('');
         }
@@ -190,7 +190,7 @@ function createMessageHtml(message, index, searchValue) {
         mediaHtml = `
       <div class="video">
         <video controls style="max-width:100%;border-radius:6px;">
-          <source src="/${message.msg_file_name}" type="video/mp4">
+          <source src="${message.msg_file_name}" type="video/mp4">
         </video>
       </div>`;
     }
@@ -199,7 +199,7 @@ function createMessageHtml(message, index, searchValue) {
         const short = message.msg_file_name.split('/').pop();
         mediaHtml = `
       <div class="download">
-        <a href="/${message.msg_file_name}" download>📎 ${short}</a>
+        <a href="${message.msg_file_name}" download>📎 ${short}</a>
       </div>`;
     }
 
@@ -423,7 +423,7 @@ function searchMessages() {
     }
     isSearching = true;
     try {
-        fetch(`/search/${chatId}?q=${encodeURIComponent(searchValue)}`)
+        fetch(`../search/${chatId}?q=${encodeURIComponent(searchValue)}`)
             .then(response => response.json())
             .then(data => {
                 const results = data.results;
@@ -467,7 +467,7 @@ document.addEventListener('keydown', function (event) {
 
 // 加载聊天列表到下拉框
 function loadChatList() {
-    fetch('/chats')
+    fetch('../chats')
         .then(res => res.json())
         .then(data => {
             const select = document.getElementById('chatSelect');
@@ -486,7 +486,7 @@ document.addEventListener('DOMContentLoaded', loadChatList);
 // 切换聊天跳转
 document.getElementById('chatSelect').addEventListener('change', function () {
     if (this.value && this.value !== window.CHAT_ID) {
-        window.location.href = '/chat/' + encodeURIComponent(this.value);
+        window.location.href = encodeURIComponent(this.value);
     }
 });
 /**
@@ -542,7 +542,7 @@ function renderImagesInBubble(containerEl, imageList, options = {}) {
 
         if (scale === maxHeight / img.height) {
             const image_bg = document.createElement('img');
-            image_bg.src = img.url.startsWith('http') ? img.url : `/${img.url}`;
+            image_bg.src = img.url.startsWith('http') ? img.url : `../${img.url}`;
             image_bg.alt = '图片';
             image_bg.style.width = `100%`;
             image_bg.style.height = `100%`;
@@ -554,7 +554,7 @@ function renderImagesInBubble(containerEl, imageList, options = {}) {
         }
 
         const image = document.createElement('img');
-        image.src          = img.url.startsWith('http') ? img.url : `/${img.url}`;
+        image.src          = img.url.startsWith('http') ? img.url : `../${img.url}`;
         image.alt          = '图片';
         image.style.width  = `${w}px`;
         image.style.height = `${h}px`;
@@ -565,7 +565,7 @@ function renderImagesInBubble(containerEl, imageList, options = {}) {
 
         // 包裹 <a> 链接
         const link = document.createElement('a');
-        link.href   = `/${img.url}`;
+        link.href   = `../${img.url}`;
         link.target = '_blank';
         link.style.zIndex = '1';
         link.appendChild(image);

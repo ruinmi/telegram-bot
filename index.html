@@ -3,6 +3,7 @@
 
 <head>
   <meta charset="utf-8" />
+  <link rel="icon" href="resources/favicon.svg" type="image/svg+xml">
   <title>聊天频道管理</title>
   <style>
     :root {
@@ -595,7 +596,7 @@
     let selectedChatId = null;
 
     function loadChats() {
-      fetch('/chats')
+      fetch('chats')
         .then(r => r.json())
         .then(data => {
           const ul = document.getElementById('chatList');
@@ -618,7 +619,7 @@
             });
 
             const link = document.createElement('a');
-            link.href = '/chat/' + encodeURIComponent(chat.id);
+            link.href = 'chat/' + encodeURIComponent(chat.id);
             link.textContent = chat.remark || chat.id;
 
             label.appendChild(radio);
@@ -639,7 +640,7 @@
         showToast('请填写聊天 ID 后再添加频道。', 'error');
         return;
       }
-      fetch('/add_chat', {
+      fetch('add_chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -662,7 +663,7 @@
     });
 
     function checkWorkers() {
-      fetch('/workers_status')
+      fetch('workers_status')
         .then(r => r.json())
         .then(data => {
           const btn = document.getElementById('startWorkers');
@@ -677,7 +678,7 @@
     }
 
     document.getElementById('startWorkers').addEventListener('click', () => {
-      fetch('/start_workers', { method: 'POST' })
+      fetch('start_workers', { method: 'POST' })
         .then(() => checkWorkers());
     });
 
@@ -695,7 +696,7 @@
       }
 
       const sqlStr = document.getElementById('sql_str').value;
-      const res = await fetch('/execute_sql', {
+      const res = await fetch('execute_sql', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

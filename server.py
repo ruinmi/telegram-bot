@@ -15,8 +15,6 @@ from main import handle
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_url_path='', static_folder=script_dir, template_folder=script_dir)
-USERNAME = os.environ.get('BOT_USERNAME', 'user')
-PASSWORD = os.environ.get('BOT_PASSWORD')
 
 # 配置日志
 logger = get_logger('server')
@@ -114,42 +112,25 @@ def find_chat(info: str) -> tuple[str, str] | None:
 
 # Workers are started manually via API
 
-def check_auth(auth):
-    return auth and auth.username == USERNAME and PASSWORD and auth.password == PASSWORD
-
 def authenticate():
     return Response('Authentication required', 401, {'WWW-Authenticate': 'Basic realm="Login Required"'})
 
-def requires_auth(f):
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        if PASSWORD:
-            auth = request.authorization
-            if not check_auth(auth):
-                return authenticate()
-        return f(*args, **kwargs)
-    return decorated
-
 @app.route('/')
-@requires_auth
 def index_page():
     return render_template('index.html')
 
 
 @app.route('/workers_status')
-@requires_auth
 def workers_status_route():
     return jsonify({'started': workers_started()})
 
 
 @app.route('/start_workers', methods=['POST'])
-@requires_auth
 def start_workers_route():
     started = start_saved_chat_workers()
     return jsonify({'started': started})
 
 @app.route('/resources/<path:filename>')
-@requires_auth
 def resources_files(filename):
     full_path = safe_join(script_dir, 'resources', filename)
     if not os.path.isfile(full_path):
@@ -157,7 +138,6 @@ def resources_files(filename):
     return send_from_directory(os.path.join(script_dir, 'resources'), filename)
 
 @app.route('/fonts/<path:filename>')
-@requires_auth
 def fonts_files(filename):
     full_path = safe_join(script_dir, 'fonts', filename)
     if not os.path.isfile(full_path):
@@ -165,7 +145,6 @@ def fonts_files(filename):
     return send_from_directory(os.path.join(script_dir, 'fonts'), filename)
 
 @app.route('/downloads/<path:filename>')
-@requires_auth
 def downloads_files(filename):
     full_path = safe_join(script_dir, 'downloads', filename)
     if not os.path.isfile(full_path):
@@ -198,17 +177,14 @@ def row_to_message(row):
     return item
 
 @app.route('/chat/<chat_id>')
-@requires_auth
 def chat_page(chat_id):
     return render_template('template.html', chat_id=chat_id)
 
 @app.route('/chats')
-@requires_auth
 def list_chats():
     return jsonify({'chats': load_chats()})
 
 @app.route('/add_chat', methods=['POST'])
-@requires_auth
 def add_chat():
     data = request.get_json(force=True)
     chat_id = str(data.get('chat_id', '')).strip()
@@ -240,7 +216,6 @@ def add_chat():
     return jsonify({'message': 'chat export started'})
 
 @app.route('/messages/<chat_id>')
-@requires_auth
 def get_messages(chat_id):
     conn = get_db(chat_id)
     if not conn:
@@ -273,7 +248,6 @@ def get_messages(chat_id):
     return jsonify({'total': total, 'offset': offset, 'messages': messages})
 
 @app.route('/messages/<chat_id>/<msg_id>')
-@requires_auth
 def get_message(chat_id, msg_id):
     conn = get_db(chat_id)
     if not conn:
@@ -298,7 +272,6 @@ def get_message(chat_id, msg_id):
     return jsonify(message)
                 
 @app.route('/search/<chat_id>')
-@requires_auth
 def search_messages(chat_id):
     query = request.args.get('q', '').strip().lower()
     conn = get_db(chat_id)
@@ -379,7 +352,6 @@ def server_error(e):
     return jsonify({'error': 'Server error'}), 500
 
 @app.route('/execute_sql', methods=['POST'])
-@requires_auth
 def execute_sql():
     data = request.get_json(force=True)
     chat_id = data.get("chat_id", "").strip()
