@@ -311,6 +311,10 @@
     }
 
     .chat-item {
+      display: flex;
+      align-items: stretch;
+      justify-content: space-between;
+      gap: 12px;
       background: rgba(15, 23, 42, 0.55);
       border: 1px solid rgba(148, 163, 184, 0.18);
       border-radius: 16px;
@@ -323,6 +327,7 @@
       gap: 14px;
       padding: 14px 18px;
       color: var(--text-strong);
+      flex: 1;
     }
 
     .chat-item a {
@@ -330,6 +335,25 @@
       font-weight: 600;
       text-decoration: none;
       letter-spacing: 0.01em;
+    }
+
+    .chat-actions {
+      display: flex;
+      align-items: center;
+      padding: 10px 14px 10px 0;
+    }
+
+    .chat-actions button {
+      padding: 10px 18px;
+      background: rgba(248, 113, 113, 0.15);
+      border: 1px solid rgba(248, 113, 113, 0.35);
+      color: #fecaca;
+      box-shadow: none;
+    }
+
+    .chat-actions button:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 12px 26px -20px rgba(248, 113, 113, 0.85);
     }
 
     .chat-item:hover {
@@ -532,6 +556,13 @@
                 </div>
               </label>
               <label class="option-item">
+                <input type="checkbox" id="downloadImagesOnly" />
+                <div class="option-item__content">
+                  <span class="option-item__title">只下载图片</span>
+                  <small>仍使用 tdl download，并通过 -i 过滤 jpg/png/webp 等图片格式。</small>
+                </div>
+              </label>
+              <label class="option-item">
                 <input type="checkbox" id="allMessages" checked />
                 <div class="option-item__content">
                   <span class="option-item__title">同步全部消息</span>
@@ -625,9 +656,65 @@
             label.appendChild(radio);
             label.appendChild(link);
             li.appendChild(label);
+
+            const actions = document.createElement('div');
+            actions.className = 'chat-actions';
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.textContent = '删除';
+            delBtn.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const name = chat.remark || chat.id;
+              if (!confirm(`确认删除：${name}？\\n将同时删除 data/ 和 downloads/ 下该 chat 的所有文件。`)) return;
+
+              fetch('delete_chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: chat.id })
+              })
+                .then(r => r.json())
+                .then(() => {
+                  if (selectedChatId === chat.id) {
+                    selectedChatId = null;
+                  }
+                  showToast('频道已删除。');
+                  loadChats();
+                })
+                .catch(() => showToast('删除失败，请重试。', 'error'));
+            });
+
+            actions.appendChild(delBtn);
+            li.appendChild(actions);
             ul.appendChild(li);
           });
         });
+    }
+
+    function bindDownloadImagesOnlyOption() {
+      const downloadFiles = document.getElementById('downloadFiles');
+      const downloadImagesOnly = document.getElementById('downloadImagesOnly');
+      if (!downloadFiles || !downloadImagesOnly) return;
+
+      function syncState() {
+        if (downloadImagesOnly.checked) {
+          if (downloadFiles.dataset.prevChecked === undefined) {
+            downloadFiles.dataset.prevChecked = downloadFiles.checked ? '1' : '0';
+          }
+          downloadFiles.checked = true;
+          downloadFiles.disabled = true;
+        } else {
+          downloadFiles.disabled = false;
+          if (downloadFiles.dataset.prevChecked !== undefined) {
+            downloadFiles.checked = downloadFiles.dataset.prevChecked === '1';
+            delete downloadFiles.dataset.prevChecked;
+          }
+        }
+      }
+
+      downloadImagesOnly.addEventListener('change', syncState);
+      syncState();
     }
 
     document.getElementById('addForm').addEventListener('submit', e => {
@@ -635,6 +722,7 @@
       const id = document.getElementById('chatId').value.trim();
       const remark = document.getElementById('remark').value.trim();
       const download = document.getElementById('downloadFiles').checked;
+      const downloadImagesOnly = document.getElementById('downloadImagesOnly').checked;
       const allMsg = document.getElementById('allMessages').checked;
       if (!id) {
         showToast('请填写聊天 ID 后再添加频道。', 'error');
@@ -646,7 +734,8 @@
         body: JSON.stringify({
           chat_id: id,
           remark: remark,
-          download_files: download,
+          download_files: downloadImagesOnly ? true : download,
+          download_images_only: downloadImagesOnly,
           all_messages: allMsg,
           raw_messages: true
         })
@@ -656,6 +745,8 @@
           document.getElementById('chatId').value = '';
           document.getElementById('remark').value = '';
           document.getElementById('downloadFiles').checked = true;
+          document.getElementById('downloadFiles').disabled = false;
+          document.getElementById('downloadImagesOnly').checked = false;
           document.getElementById('allMessages').checked = true;
           showToast('频道已添加到列表。');
           loadChats();
@@ -683,6 +774,7 @@
     });
 
     document.addEventListener('DOMContentLoaded', () => {
+      bindDownloadImagesOnlyOption();
       loadChats();
       checkWorkers();
     });

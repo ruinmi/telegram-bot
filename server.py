@@ -2,12 +2,13 @@ import os
 import json
 import subprocess
 import atexit
+import shutil
 
 from project_logger import get_logger
 from db_utils import get_connection, get_db_path
 import sqlite3
 import time
-from threading import Thread
+from threading import Thread, Event
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, render_template, Response, abort
 from werkzeug.utils import safe_join
@@ -24,6 +25,7 @@ WORKERS_FLAG = os.path.join(script_dir, 'workers_started.flag')
 
 _workers_started = False
 _workers_lock_handle = None
+_chat_worker_stop_events = {}
 
 def workers_started():
     if _workers_started:
@@ -169,17 +171,25 @@ def start_chat_worker(chat, interval=1800):
     chat_id = chat.get('id')
     remark = chat.get('remark')
     is_download = chat.get('download_files', True)
+    download_images_only = chat.get('download_images_only', False)
     is_all = chat.get('all_messages', True)
     is_raw = chat.get('raw_messages', True)
     
     if not workers_started():
         logger.info(f'Worker {remark} will not start')
         return
+
+    if chat_id in _chat_worker_stop_events and not _chat_worker_stop_events[chat_id].is_set():
+        logger.info(f'Worker {remark} already running')
+        return
+
+    stop_event = Event()
+    _chat_worker_stop_events[chat_id] = stop_event
     
     def worker():
-        while True:
-            handle(chat_id, is_download, is_all, is_raw, remark)
-            time.sleep(interval)
+        while not stop_event.is_set():
+            handle(chat_id, is_download, is_all, is_raw, remark, download_images_only=bool(download_images_only))
+            stop_event.wait(interval)
 
     logger.info(f'Worker {remark} will start')
     Thread(target=worker, daemon=True).start()
@@ -352,6 +362,9 @@ def add_chat():
     if data.get('remark', ''):
         remark = data.get('remark')
     download_files = bool(data.get('download_files', True))
+    download_images_only = bool(data.get('download_images_only', False))
+    if download_images_only:
+        download_files = True
     all_messages = bool(data.get('all_messages', True))
     raw_messages = bool(data.get('raw_messages', True))
     if not chat_id:
@@ -363,6 +376,7 @@ def add_chat():
         'id': chat_id,
         'remark': remark,
         'download_files': download_files,
+        'download_images_only': download_images_only,
         'all_messages': all_messages,
         'raw_messages': raw_messages
     }
@@ -374,6 +388,54 @@ def add_chat():
 
     start_chat_worker(chat_item)
     return jsonify({'message': 'chat export started'})
+
+
+def _safe_remove_tree(base_dir: str, chat_id: str) -> bool:
+    if not chat_id:
+        return False
+
+    base_real = os.path.realpath(base_dir)
+    target = os.path.realpath(os.path.join(base_dir, chat_id))
+    if not (target == base_real or target.startswith(base_real + os.sep)):
+        return False
+
+    if not os.path.exists(target):
+        return True
+
+    try:
+        shutil.rmtree(target, ignore_errors=True)
+        return True
+    except Exception:
+        return False
+
+
+@app.route('/delete_chat', methods=['POST'])
+def delete_chat():
+    data = request.get_json(force=True)
+    chat_id = str(data.get('chat_id', '')).strip()
+    if not chat_id:
+        return jsonify({'error': 'chat_id required'}), 400
+
+    stop_event = _chat_worker_stop_events.get(chat_id)
+    if stop_event:
+        stop_event.set()
+
+    chats = load_chats()
+    before = len(chats)
+    chats = [c for c in chats if str(c.get('id')) != chat_id]
+    save_chats(chats)
+
+    data_dir = os.path.join(script_dir, 'data')
+    downloads_dir = os.path.join(script_dir, 'downloads')
+    removed_data = _safe_remove_tree(data_dir, chat_id)
+    removed_downloads = _safe_remove_tree(downloads_dir, chat_id)
+
+    deleted = len(chats) != before
+    return jsonify({
+        'deleted': deleted,
+        'removed_data': removed_data,
+        'removed_downloads': removed_downloads,
+    })
 
 @app.route('/messages/<chat_id>')
 def get_messages(chat_id):

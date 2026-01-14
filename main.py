@@ -14,7 +14,7 @@ from og_utils import calculate_size, get_open_graph_info
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 
-def handle(chat_id: str, is_download: bool, is_all: bool, is_raw: bool, remark: str | None):
+def handle(chat_id: str, is_download: bool, is_all: bool, is_raw: bool, remark: str | None, download_images_only: bool = False):
     """Export messages and store them in the database."""
     logger = get_logger(remark or chat_id)
     data_dir = os.path.join(script_dir, 'data', chat_id)
@@ -33,6 +33,7 @@ def handle(chat_id: str, is_download: bool, is_all: bool, is_raw: bool, remark: 
                 is_download=is_download,
                 is_all=is_all,
                 is_raw=is_raw,
+                download_images_only=download_images_only,
                 remark=remark,
             )
         except Exception as e:

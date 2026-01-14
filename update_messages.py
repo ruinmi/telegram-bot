@@ -12,7 +12,9 @@ from db_utils import get_last_export_time, set_exported_time
 tdl_lock = threading.Lock()
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=True, is_all=True, is_raw=True, remark=None):
+IMAGE_EXTENSIONS = "jpg,jpeg,png,webp,gif"
+
+def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=True, is_all=True, is_raw=True, download_images_only=False, remark=None):
     logger = get_logger(remark or their_id)
     logger.info("Starting chat export...")
     last_export_time = get_last_export_time(conn)
@@ -45,6 +47,8 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
                 if not os.path.exists(download_path):
                     os.makedirs(download_path)
                 download_command = ['tdl', 'dl', '-f', msg_json_temp_path, '-d', download_path, '--skip-same', '--continue', '-t', '8', '-l', '4']
+                if download_images_only:
+                    download_command.extend(['-i', IMAGE_EXTENSIONS])
                 logger.info(f"Running download command: {' '.join(download_command)}")
                 download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
                 if download_result.returncode != 0:
