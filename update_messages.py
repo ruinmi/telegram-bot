@@ -14,6 +14,49 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 
 IMAGE_EXTENSIONS = "jpg,jpeg,png,webp,gif"
 
+def _tail_lines(text: str | None, max_lines: int = 80) -> str:
+    if not text:
+        return ""
+    lines = text.splitlines()
+    if len(lines) <= max_lines:
+        return text.strip()
+    return ("\n".join(lines[-max_lines:])).strip()
+
+
+def _run_tdl_command(command: list[str], logger, label: str):
+    logger.info(f"{label}: Running command: {' '.join(command)}")
+    with tdl_lock:
+        try:
+            result = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except FileNotFoundError as e:
+            logger.error(f"{label}: tdl not found: {e}")
+            raise
+        except Exception as e:
+            logger.exception(f"{label}: Failed to run command: {e}")
+            raise
+
+    stdout_tail = _tail_lines(result.stdout)
+    stderr_tail = _tail_lines(result.stderr)
+
+    logger.info(f"{label}: returncode={result.returncode}")
+    if stdout_tail:
+        logger.info(f"{label}: stdout (tail):\n{stdout_tail}")
+    if stderr_tail:
+        # Many CLIs write progress / warnings to stderr even on success.
+        if result.returncode == 0:
+            logger.info(f"{label}: stderr (tail):\n{stderr_tail}")
+        else:
+            logger.error(f"{label}: stderr (tail):\n{stderr_tail}")
+
+    return result
+
+
 def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=True, is_all=True, is_raw=True, download_images_only=False, remark=None):
     logger = get_logger(remark or their_id)
     logger.info("Starting chat export...")
@@ -32,68 +75,141 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
         command.append('--all')
 
 
-    logger.info(f"Running command: {' '.join(command)}")
-
-    with tdl_lock:
-        result = subprocess.run(command, capture_output=True, text=True, encoding='utf-8')
+    result = _run_tdl_command(command, logger, label="tdl chat export")
     
-        if result.returncode == 0:
-            logger.info("Chat export successful.")
-            
-            # New: Download chat files using tdl dl command
-            if is_download:
-                logger.info("Downloading files...")
-                download_path = os.path.join(script_dir, 'downloads', their_id)
-                if not os.path.exists(download_path):
-                    os.makedirs(download_path)
-                download_command = ['tdl', 'dl', '-f', msg_json_temp_path, '-d', download_path, '--skip-same', '--continue', '-t', '8', '-l', '4']
-                if download_images_only:
-                    download_command.extend(['-i', IMAGE_EXTENSIONS])
-                logger.info(f"Running download command: {' '.join(download_command)}")
-                download_result = subprocess.run(download_command, capture_output=True, text=True, encoding='utf-8')
-                if download_result.returncode != 0:
-                    logger.exception(f"Error downloading files: {download_result.stderr}")
-                else:
-                    logger.info("Download successful.")
-            
-            # Load existing messages if the file exists
-            if os.path.exists(msg_json_path):
-                with open(msg_json_path, 'r', encoding='utf-8') as file:
-                    existing_data = json.load(file)
+    if result.returncode == 0:
+        logger.info("Chat export successful.")
+
+        # Download chat files using tdl dl command
+        if is_download:
+            logger.info("Downloading files...")
+            download_path = os.path.join(script_dir, 'downloads', str(their_id))
+            os.makedirs(download_path, exist_ok=True)
+            download_command = [
+                'tdl',
+                'dl',
+                '-f',
+                msg_json_temp_path,
+                '-d',
+                download_path,
+                '--skip-same',
+                '--continue',
+                '-t',
+                '8',
+                '-l',
+                '4',
+            ]
+            if download_images_only:
+                download_command.extend(['-i', IMAGE_EXTENSIONS])
+            download_result = _run_tdl_command(download_command, logger, label="tdl dl")
+            if download_result.returncode != 0:
+                logger.error("Error downloading files (see tdl dl stdout/stderr above).")
             else:
-                existing_data = {"id": their_id, "messages": []}
-            
-            # Load new messages from the temporary exported file
-            with open(msg_json_temp_path, 'r', encoding='utf-8') as file:
-                new_data = json.load(file)
-            
-            # Append new messages to the existing messages
-            existing_data['messages'].extend(new_data['messages'])
-            
-            # Save the combined messages back to the file
-            with open(msg_json_path, 'w', encoding='utf-8') as file:
-                json.dump(existing_data, file, ensure_ascii=False, indent=4)
-            # Save the current time as the last export time
-            set_exported_time(conn, current_time)
+                logger.info("Download finished (see tdl dl stdout/stderr above).")
+
+        # Load existing messages if the file exists
+        if os.path.exists(msg_json_path):
+            with open(msg_json_path, 'r', encoding='utf-8') as file:
+                existing_data = json.load(file)
         else:
-            logger.exception(f"Error exporting chat: {result.stdout}")
+            existing_data = {"id": their_id, "messages": []}
+
+        # Load new messages from the temporary exported file
+        with open(msg_json_temp_path, 'r', encoding='utf-8') as file:
+            new_data = json.load(file)
+
+        # Append new messages to the existing messages
+        existing_data['messages'].extend(new_data['messages'])
+
+        # Save the combined messages back to the file
+        with open(msg_json_path, 'w', encoding='utf-8') as file:
+            json.dump(existing_data, file, ensure_ascii=False, indent=4)
+
+        # Save the current time as the last export time
+        set_exported_time(conn, current_time)
+    else:
+        logger.error("Error exporting chat (see tdl chat export stdout/stderr above).")
 
 def download(url, their_id, remark=None):
     logger = get_logger(remark or their_id)
-    download_path = os.path.join(script_dir, 'downloads', their_id)
-    if not os.path.exists(download_path):
-        os.makedirs(download_path)
+    download_path = os.path.join(script_dir, 'downloads', str(their_id))
+    os.makedirs(download_path, exist_ok=True)
     
 
     file_name, file_extension = os.path.splitext(os.path.basename(urllib.parse.urlparse(url).path))
     unique_name = str(uuid.uuid4()) + file_extension
     full_save_path = os.path.join(download_path, unique_name)
 
-    response = requests.get(url)
-    if response.status_code == 200:
+    try:
+        response = requests.get(url, timeout=30)
+        response.raise_for_status()
         with open(full_save_path, 'wb') as f:
             f.write(response.content)
         return full_save_path
-    else:
-        logger.exception(f"下载失败，状态码: {response.status_code}")
+    except Exception as e:
+        logger.exception(f"下载失败: {e}")
         return None
+
+
+def redownload_chat_files(their_id, download_images_only=False, remark=None):
+    """
+    Manually re-download chat files by exporting a full file list (0..now) and running tdl dl.
+    This does NOT touch the DB export cursor.
+    """
+    logger = get_logger(remark or their_id)
+    current_time = str(int(time.time()))
+    data_dir = os.path.join(script_dir, 'data', str(their_id))
+    os.makedirs(data_dir, exist_ok=True)
+    msg_json_temp_path = os.path.join(data_dir, f'{their_id}_redownload_temp.json')
+
+    export_command = [
+        'tdl',
+        'chat',
+        'export',
+        '-c',
+        str(their_id),
+        '--with-content',
+        '-o',
+        msg_json_temp_path,
+        '-i',
+        f'0,{current_time}',
+        '--raw',
+        '--all',
+    ]
+    export_result = _run_tdl_command(export_command, logger, label="tdl chat export (redownload)")
+    if export_result.returncode != 0:
+        logger.error("Redownload export failed (see stdout/stderr above).")
+        return False
+
+    download_path = os.path.join(script_dir, 'downloads', str(their_id))
+    os.makedirs(download_path, exist_ok=True)
+    download_command = [
+        'tdl',
+        'dl',
+        '-f',
+        msg_json_temp_path,
+        '-d',
+        download_path,
+        '--skip-same',
+        '--continue',
+        '-t',
+        '8',
+        '-l',
+        '4',
+    ]
+    if download_images_only:
+        download_command.extend(['-i', IMAGE_EXTENSIONS])
+
+    download_result = _run_tdl_command(download_command, logger, label="tdl dl (redownload)")
+    try:
+        if os.path.exists(msg_json_temp_path):
+            os.remove(msg_json_temp_path)
+    except Exception:
+        pass
+
+    if download_result.returncode != 0:
+        logger.error("Redownload failed (see stdout/stderr above).")
+        return False
+
+    logger.info("Redownload finished (see stdout/stderr above).")
+    return True

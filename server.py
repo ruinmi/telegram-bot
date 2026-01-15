@@ -14,6 +14,7 @@ from flask import Flask, request, jsonify, send_from_directory, render_template,
 from werkzeug.utils import safe_join
 
 from main import handle
+from update_messages import redownload_chat_files
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 app = Flask(__name__, static_url_path='', static_folder=script_dir, template_folder=script_dir)
@@ -388,6 +389,33 @@ def add_chat():
 
     start_chat_worker(chat_item)
     return jsonify({'message': 'chat export started'})
+
+
+@app.route('/redownload_chat', methods=['POST'])
+def redownload_chat():
+    data = request.get_json(force=True)
+    chat_id = str(data.get('chat_id', '')).strip()
+    if not chat_id:
+        return jsonify({'error': 'chat_id required'}), 400
+
+    chats = load_chats()
+    chat = next((c for c in chats if str(c.get('id')) == chat_id), None)
+    remark = chat.get('remark') if chat else None
+
+    download_images_only = bool(data.get('download_images_only', False))
+    if chat and chat.get('download_images_only'):
+        download_images_only = True
+
+    def worker():
+        logger.info(f'Redownload worker start: chat_id={chat_id} remark={remark} images_only={download_images_only}')
+        try:
+            ok = redownload_chat_files(chat_id, download_images_only=download_images_only, remark=remark)
+            logger.info(f'Redownload worker finished: chat_id={chat_id} ok={ok}')
+        except Exception as e:
+            logger.exception(f'Redownload worker crashed: chat_id={chat_id} error={e}')
+
+    Thread(target=worker, daemon=True).start()
+    return jsonify({'message': 'redownload started'})
 
 
 def _safe_remove_tree(base_dir: str, chat_id: str) -> bool:

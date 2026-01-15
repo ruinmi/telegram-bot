@@ -685,6 +685,32 @@
                 .catch(() => showToast('删除失败，请重试。', 'error'));
             });
 
+            const redownloadBtn = document.createElement('button');
+            redownloadBtn.type = 'button';
+            redownloadBtn.textContent = '重新下载媒体';
+            redownloadBtn.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const name = chat.remark || chat.id;
+              if (!confirm(`确认重新下载媒体：${name}？\\n将导出全量文件清单并重新执行 tdl dl（会跳过已下载）。`)) return;
+
+              fetch('redownload_chat', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: chat.id, download_images_only: !!chat.download_images_only })
+              })
+                .then(r => r.json())
+                .then(data => {
+                  if (data && data.error) {
+                    showToast(`重新下载启动失败：${data.error}`, 'error');
+                    return;
+                  }
+                  showToast('已启动重新下载（后台执行）。');
+                })
+                .catch(() => showToast('重新下载启动失败，请重试。', 'error'));
+            });
+
+            actions.appendChild(redownloadBtn);
             actions.appendChild(delBtn);
             li.appendChild(actions);
             ul.appendChild(li);
