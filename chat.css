@@ -362,7 +362,7 @@ body {
     font-weight: 400;
 }
 
-#chatSelect {
+.select-component {
     margin-left: 10px;
     min-width: 90px;
     height: 37px;
@@ -416,13 +416,14 @@ body {
 
     body #searchBox {
         font-size: 14px;
-        width: 250px
+        width: 150px;
+        margin-left: 8px;
     }
 
     body #confirmSearch {
         height: 38px;
-        width: 68px;
-        font-size: 14px;
+        width: 81px;
+        font-size: 10px;
         line-height: 38px;
     }
 
@@ -433,5 +434,11 @@ body {
     .message {
         max-width: 80%;
         border-radius: 1rem;
+    }
+
+    .select-component {
+        min-width: 60px;
+        font-size: 10px;
+        margin-left: 5px;
     }
 }
