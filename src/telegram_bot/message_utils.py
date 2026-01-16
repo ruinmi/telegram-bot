@@ -43,7 +43,7 @@ def is_quark_link_stale(link: str) -> bool:
     resp = requests.post(url, params=params, json=request_payload, headers=headers)
     try:
         data = resp.json()
-        if int(data.get('code', 0)) == 41011:
+        if int(data.get('code', 0)) == 41011 or int(data.get('code', 0)) == 41012:
             return True
     except Exception as e:
         print(f"Error checking quark link: {e}")
@@ -153,3 +153,8 @@ def filter_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             filtered_messages.append(msg)
             
     return filtered_messages
+
+if __name__ == "__main__":
+    # Example usage
+    stale = is_quark_link_stale('https://pan.quark.cn/s/3e6b5d159884#/list/share')
+    print(f'Is the Quark link stale? {stale}')

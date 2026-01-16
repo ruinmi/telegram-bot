@@ -35,6 +35,7 @@ def init_db(conn):
             value TEXT
         )
     ''')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_chat_ts_id ON messages(chat_id, timestamp, msg_id)')
     conn.commit()
 
 def get_connection(chat_id, row_factory=None):
@@ -61,8 +62,11 @@ def save_messages(conn, chat_id, messages):
         data.append((chat_id, m['msg_id'], m['date'], m['timestamp'],
                      m['msg_file_name'], m['user'], m['msg'],
                      m['ori_height'], m['ori_width'], og_info, reactions, msg_files, m['reply_to_msg_id']))
+    before = conn.total_changes
     conn.executemany(insert_sql, data)
+    inserted = conn.total_changes - before
     conn.commit()
+    return inserted
 
 def get_last_export_time(conn):
     cur = conn.cursor()

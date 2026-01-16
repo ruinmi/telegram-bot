@@ -215,7 +215,8 @@ def get_db(chat_id: str):
     db_path = get_db_path(chat_id)
     if not os.path.exists(db_path):
         return None
-    return get_connection(chat_id, sqlite3.Row)
+    conn = get_connection(chat_id, sqlite3.Row)
+    return conn
 
 
 def row_to_message(row):
@@ -693,25 +694,150 @@ def get_messages(
         if offset < 0:
             offset = max(total + offset, 0)
 
+        limit = max(1, min(int(limit), 200))
         cur.execute(
-            "SELECT * FROM messages WHERE chat_id=? ORDER BY timestamp LIMIT ? OFFSET ?",
+            """
+            SELECT
+                m.chat_id,
+                m.msg_id,
+                m.date,
+                m.timestamp,
+                m.msg_file_name,
+                m.user,
+                m.msg,
+                m.ori_height,
+                m.ori_width,
+                m.og_info,
+                m.reactions,
+                m.msg_files,
+                m.reply_to_msg_id,
+                r.chat_id AS r_chat_id,
+                r.msg_id AS r_msg_id,
+                r.date AS r_date,
+                r.timestamp AS r_timestamp,
+                r.msg_file_name AS r_msg_file_name,
+                r.user AS r_user,
+                r.msg AS r_msg,
+                r.ori_height AS r_ori_height,
+                r.ori_width AS r_ori_width,
+                r.og_info AS r_og_info,
+                r.reactions AS r_reactions,
+                r.msg_files AS r_msg_files,
+                r.reply_to_msg_id AS r_reply_to_msg_id
+            FROM messages m
+            LEFT JOIN messages r
+                ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+            WHERE m.chat_id=?
+            ORDER BY m.msg_id
+            LIMIT ? OFFSET ?
+            """,
             (chat_id, limit, offset),
         )
         rows = cur.fetchall()
         messages = []
         for row in rows:
-            item = row_to_message(row)
-            if item.get("reply_to_msg_id"):
-                cur2 = conn.cursor()
-                cur2.execute(
-                    "SELECT * FROM messages WHERE chat_id=? AND msg_id=?",
-                    (chat_id, item["reply_to_msg_id"]),
-                )
-                r = cur2.fetchone()
-                if r:
-                    item["reply_message"] = row_to_message(r)
+            raw = dict(row)
+            item = row_to_message({k: v for k, v in raw.items() if not k.startswith("r_")})
+
+            if raw.get("r_msg_id") is not None:
+                reply_raw = {k[2:]: v for k, v in raw.items() if k.startswith("r_")}
+                item["reply_message"] = row_to_message(reply_raw)
             messages.append(item)
         return {"total": total, "offset": offset, "messages": messages}
+    finally:
+        conn.close()
+
+
+@app.get("/messages_between/{chat_id}")
+def get_messages_between(
+    chat_id: str,
+    start_msg_id: int = Query(...),
+    end_msg_id: int = Query(...),
+    direction: str = Query("down"),
+    limit: int = Query(20),
+):
+    """
+    Fetch context messages between (start_msg_id, end_msg_id), exclusive.
+
+    direction=down: returns messages near start_msg_id (ascending msg_id).
+    direction=up:   returns messages near end_msg_id (ascending msg_id, but taken from the end).
+
+    This is used by the search UI to expand context between two search hits without
+    needing expensive row-number/offset calculations.
+    """
+    conn = get_db(chat_id)
+    if not conn:
+        return {"messages": [], "has_more": False}
+
+    start_msg_id = int(start_msg_id)
+    end_msg_id = int(end_msg_id)
+    if start_msg_id >= end_msg_id:
+        return {"messages": [], "has_more": False}
+
+    direction = (direction or "down").strip().lower()
+    if direction not in {"down", "up"}:
+        return _json_error(400, "direction must be 'down' or 'up'")
+
+    limit = max(1, min(int(limit), 200))
+    fetch_limit = min(limit + 1, 201)
+
+    try:
+        cur = conn.cursor()
+        order_sql = "ORDER BY m.msg_id" if direction == "down" else "ORDER BY m.msg_id DESC"
+        cur.execute(
+            f"""
+            SELECT
+                m.chat_id,
+                m.msg_id,
+                m.date,
+                m.timestamp,
+                m.msg_file_name,
+                m.user,
+                m.msg,
+                m.ori_height,
+                m.ori_width,
+                m.og_info,
+                m.reactions,
+                m.msg_files,
+                m.reply_to_msg_id,
+                r.chat_id AS r_chat_id,
+                r.msg_id AS r_msg_id,
+                r.date AS r_date,
+                r.timestamp AS r_timestamp,
+                r.msg_file_name AS r_msg_file_name,
+                r.user AS r_user,
+                r.msg AS r_msg,
+                r.ori_height AS r_ori_height,
+                r.ori_width AS r_ori_width,
+                r.og_info AS r_og_info,
+                r.reactions AS r_reactions,
+                r.msg_files AS r_msg_files,
+                r.reply_to_msg_id AS r_reply_to_msg_id
+            FROM messages m
+            LEFT JOIN messages r
+                ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+            WHERE m.chat_id=? AND m.msg_id > ? AND m.msg_id < ?
+            {order_sql}
+            LIMIT ?
+            """,
+            (chat_id, start_msg_id, end_msg_id, fetch_limit),
+        )
+        rows = cur.fetchall()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        if direction == "up":
+            rows = list(reversed(rows))
+
+        messages = []
+        for row in rows:
+            raw = dict(row)
+            item = row_to_message({k: v for k, v in raw.items() if not k.startswith("r_")})
+            if raw.get("r_msg_id") is not None:
+                reply_raw = {k[2:]: v for k, v in raw.items() if k.startswith("r_")}
+                item["reply_message"] = row_to_message(reply_raw)
+            messages.append(item)
+
+        return {"messages": messages, "has_more": has_more}
     finally:
         conn.close()
 
@@ -724,22 +850,51 @@ def get_message(chat_id: str, msg_id: int):
 
     try:
         cur = conn.cursor()
-        cur.execute("SELECT COUNT(*) FROM messages WHERE chat_id=? AND msg_id=?", (chat_id, msg_id))
-        total = cur.fetchone()[0]
-        if total < 1:
+        cur.execute(
+            """
+            SELECT
+                m.chat_id,
+                m.msg_id,
+                m.date,
+                m.timestamp,
+                m.msg_file_name,
+                m.user,
+                m.msg,
+                m.ori_height,
+                m.ori_width,
+                m.og_info,
+                m.reactions,
+                m.msg_files,
+                m.reply_to_msg_id,
+                r.chat_id AS r_chat_id,
+                r.msg_id AS r_msg_id,
+                r.date AS r_date,
+                r.timestamp AS r_timestamp,
+                r.msg_file_name AS r_msg_file_name,
+                r.user AS r_user,
+                r.msg AS r_msg,
+                r.ori_height AS r_ori_height,
+                r.ori_width AS r_ori_width,
+                r.og_info AS r_og_info,
+                r.reactions AS r_reactions,
+                r.msg_files AS r_msg_files,
+                r.reply_to_msg_id AS r_reply_to_msg_id
+            FROM messages m
+            LEFT JOIN messages r
+                ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+            WHERE m.chat_id=? AND m.msg_id=?
+            """,
+            (chat_id, msg_id),
+        )
+        row = cur.fetchone()
+        if not row:
             return {"total": 0, "offset": 0, "messages": []}
 
-        cur.execute("SELECT * FROM messages WHERE chat_id=? AND msg_id=?", (chat_id, msg_id))
-        rows = cur.fetchall()
-        message = row_to_message(rows[0])
-        if message.get("reply_to_msg_id"):
-            cur.execute(
-                "SELECT * FROM messages WHERE chat_id=? AND msg_id=?",
-                (chat_id, message["reply_to_msg_id"]),
-            )
-            r = cur.fetchone()
-            if r:
-                message["reply_message"] = row_to_message(r)
+        raw = dict(row)
+        message = row_to_message({k: v for k, v in raw.items() if not k.startswith("r_")})
+        if raw.get("r_msg_id") is not None:
+            reply_raw = {k[2:]: v for k, v in raw.items() if k.startswith("r_")}
+            message["reply_message"] = row_to_message(reply_raw)
         return message
     finally:
         conn.close()
@@ -809,7 +964,39 @@ def get_messages_by_reaction(
         if msg_ids:
             placeholders = ",".join(["?"] * len(msg_ids))
             cur.execute(
-                f"SELECT * FROM messages WHERE chat_id=? AND msg_id IN ({placeholders})",
+                f"""
+                SELECT
+                    m.chat_id,
+                    m.msg_id,
+                    m.date,
+                    m.timestamp,
+                    m.msg_file_name,
+                    m.user,
+                    m.msg,
+                    m.ori_height,
+                    m.ori_width,
+                    m.og_info,
+                    m.reactions,
+                    m.msg_files,
+                    m.reply_to_msg_id,
+                    r.chat_id AS r_chat_id,
+                    r.msg_id AS r_msg_id,
+                    r.date AS r_date,
+                    r.timestamp AS r_timestamp,
+                    r.msg_file_name AS r_msg_file_name,
+                    r.user AS r_user,
+                    r.msg AS r_msg,
+                    r.ori_height AS r_ori_height,
+                    r.ori_width AS r_ori_width,
+                    r.og_info AS r_og_info,
+                    r.reactions AS r_reactions,
+                    r.msg_files AS r_msg_files,
+                    r.reply_to_msg_id AS r_reply_to_msg_id
+                FROM messages m
+                LEFT JOIN messages r
+                    ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+                WHERE m.chat_id=? AND m.msg_id IN ({placeholders})
+                """,
                 (chat_id, *msg_ids),
             )
             rows = cur.fetchall()
@@ -819,19 +1006,14 @@ def get_messages_by_reaction(
                 row = rows_by_id.get(int(mid))
                 if not row:
                     continue
-                item = row_to_message(row)
+
+                raw = dict(row)
+                item = row_to_message({k: v for k, v in raw.items() if not k.startswith("r_")})
                 item["reaction_sort_emoticon"] = emoticon
                 item["reaction_sort_count"] = counts_by_msg_id.get(int(mid), 0)
-
-                if item.get("reply_to_msg_id"):
-                    cur2 = conn.cursor()
-                    cur2.execute(
-                        "SELECT * FROM messages WHERE chat_id=? AND msg_id=?",
-                        (chat_id, item["reply_to_msg_id"]),
-                    )
-                    r = cur2.fetchone()
-                    if r:
-                        item["reply_message"] = row_to_message(r)
+                if raw.get("r_msg_id") is not None:
+                    reply_raw = {k[2:]: v for k, v in raw.items() if k.startswith("r_")}
+                    item["reply_message"] = row_to_message(reply_raw)
 
                 messages.append(item)
 
@@ -841,18 +1023,25 @@ def get_messages_by_reaction(
 
 
 @app.get("/search/{chat_id}")
-def search_messages(chat_id: str, q: str = Query("")):
+def search_messages(
+    chat_id: str,
+    q: str = Query(""),
+    offset: int = Query(0),
+    limit: int = Query(20),
+):
     query = (q or "").strip().lower()
     conn = get_db(chat_id)
     if not conn:
-        return {"total": 0, "results": []}
+        return {"total": 0, "offset": 0, "messages": []}
 
     try:
         cur = conn.cursor()
         if not query:
             cur.execute("SELECT COUNT(*) FROM messages WHERE chat_id=?", (chat_id,))
             total = cur.fetchone()[0]
-            return {"total": total, "results": []}
+            if offset < 0:
+                offset = max(total + offset, 0)
+            return {"total": total, "offset": offset, "messages": []}
 
         keywords = query.split()
         conditions = []
@@ -863,9 +1052,9 @@ def search_messages(chat_id: str, q: str = Query("")):
                 "("
                 + " OR ".join(
                     [
-                        "LOWER(date) LIKE ?",
-                        'LOWER(COALESCE(msg, "")) LIKE ?',
-                        'LOWER(COALESCE(msg_file_name, "")) LIKE ?',
+                        "LOWER(m.date) LIKE ?",
+                        'LOWER(COALESCE(m.msg, "")) LIKE ?',
+                        'LOWER(COALESCE(m.msg_file_name, "")) LIKE ?',
                     ]
                 )
                 + ")"
@@ -874,44 +1063,67 @@ def search_messages(chat_id: str, q: str = Query("")):
 
         where_clause = " AND ".join(conditions)
 
-        sql = f"""
-            SELECT
-                m.*,
-                (
-                    SELECT COUNT(*) FROM messages m2
-                    WHERE m2.chat_id = m.chat_id AND m2.timestamp <= m.timestamp
-                ) - 1 AS idx
-            FROM messages m
-            WHERE m.chat_id=? AND {where_clause}
-            ORDER BY m.timestamp
-        """
-        cur.execute(sql, (chat_id, *params))
-        rows = cur.fetchall()
-
         sql_count = f"""
-            SELECT COUNT(*) FROM messages
-            WHERE chat_id=? AND {where_clause}
+            SELECT COUNT(*) FROM messages m
+            WHERE m.chat_id=? AND {where_clause}
         """
         cur.execute(sql_count, (chat_id, *params))
         total = cur.fetchone()[0]
 
-        results = []
-        for row in rows:
-            item = row_to_message(row)
-            if "idx" in item:
-                item["index"] = item.pop("idx")
-            if item.get("reply_to_msg_id"):
-                cur2 = conn.cursor()
-                cur2.execute(
-                    "SELECT * FROM messages WHERE chat_id=? AND msg_id=?",
-                    (chat_id, item["reply_to_msg_id"]),
-                )
-                r = cur2.fetchone()
-                if r:
-                    item["reply_message"] = row_to_message(r)
-            results.append(item)
+        if offset < 0:
+            offset = max(total + offset, 0)
+        offset = max(int(offset), 0)
+        limit = max(1, min(int(limit), 200))
 
-        return {"total": total, "results": results}
+        sql_page = f"""
+            SELECT
+                m.chat_id,
+                m.msg_id,
+                m.date,
+                m.timestamp,
+                m.msg_file_name,
+                m.user,
+                m.msg,
+                m.ori_height,
+                m.ori_width,
+                m.og_info,
+                m.reactions,
+                m.msg_files,
+                m.reply_to_msg_id,
+                r.chat_id AS r_chat_id,
+                r.msg_id AS r_msg_id,
+                r.date AS r_date,
+                r.timestamp AS r_timestamp,
+                r.msg_file_name AS r_msg_file_name,
+                r.user AS r_user,
+                r.msg AS r_msg,
+                r.ori_height AS r_ori_height,
+                r.ori_width AS r_ori_width,
+                r.og_info AS r_og_info,
+                r.reactions AS r_reactions,
+                r.msg_files AS r_msg_files,
+                r.reply_to_msg_id AS r_reply_to_msg_id
+            FROM messages m
+            LEFT JOIN messages r
+                ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+            WHERE m.chat_id=? AND {where_clause}
+            ORDER BY m.msg_id
+            LIMIT ? OFFSET ?
+        """
+        cur.execute(sql_page, (chat_id, *params, limit, offset))
+        rows = cur.fetchall()
+
+        messages = []
+        for row in rows:
+            raw = dict(row)
+            item = row_to_message({k: v for k, v in raw.items() if not k.startswith("r_")})
+
+            if raw.get("r_msg_id") is not None:
+                reply_raw = {k[2:]: v for k, v in raw.items() if k.startswith("r_")}
+                item["reply_message"] = row_to_message(reply_raw)
+            messages.append(item)
+
+        return {"total": total, "offset": offset, "messages": messages}
     finally:
         conn.close()
 

@@ -6,6 +6,8 @@ const topLoader = document.getElementById('topLoader');
 const chatId = window.CHAT_ID;
 const pageSize = 20;
 const contextSize = 5
+let searchGapCounter = 0;
+let latestChatMsgId = null;
 let oldestIndex = 0;
 let totalMessages = 0;
 const DEFAULT_MAX_IMG_HEIGHT = window.innerHeight * 0.5;
@@ -22,6 +24,20 @@ if ('scrollRestoration' in history) {
 
 function nextTick() {
     return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+function nextFrame() {
+    return new Promise(resolve => requestAnimationFrame(resolve));
+}
+
+function isInViewport(el, margin = 200) {
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    return rect.bottom >= -margin && rect.top <= (window.innerHeight + margin);
+}
+
+function isPageScrollable() {
+    return document.body.scrollHeight > window.innerHeight + 10;
 }
 
 function resolveMediaUrl(url) {
@@ -133,6 +149,39 @@ function fetchMessages(offset, limit) {
         });
 }
 
+async function ensureLatestChatMsgId() {
+    if (latestChatMsgId !== null) return latestChatMsgId;
+    try {
+        const data = await fetchMessages(-1, 1);
+        const m = Array.isArray(data.messages) ? data.messages[0] : null;
+        latestChatMsgId = m && m.msg_id != null ? Number(m.msg_id) : null;
+    } catch (e) {
+        latestChatMsgId = null;
+    }
+    return latestChatMsgId;
+}
+
+function fetchSearchMessages(query, offset, limit) {
+    return fetch(`../search/${chatId}?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('无法加载搜索结果');
+            }
+            return response.json();
+        });
+}
+
+function fetchMessagesBetweenMsgIds(startMsgId, endMsgId, direction, limit) {
+    return fetch(
+        `../messages_between/${chatId}?start_msg_id=${startMsgId}&end_msg_id=${endMsgId}&direction=${encodeURIComponent(direction)}&limit=${limit}`
+    ).then(response => {
+        if (!response.ok) {
+            throw new Error('无法加载上下文消息');
+        }
+        return response.json();
+    });
+}
+
 function fetchReactionEmoticons() {
     return fetch(`../reactions_emoticons/${chatId}`)
         .then(response => {
@@ -240,6 +289,10 @@ function loadMessages() {
 
 let currentStartIndex;
 let isSearching = false;
+let searchQuery = '';
+let searchOldestOffset = 0;
+let searchTotal = 0;
+let isLoadingSearchMessages = false;
 const messagesContainer = document.getElementById('messages');
 
 function showTopLoader() {
@@ -473,7 +526,7 @@ function createMessageHtml(message, index, searchValue) {
 
     // 6. 拼接整体
     return `
-    <div class="message ${hasImage} ${position} clearfix">
+    <div class="message ${hasImage} ${position} clearfix" data-msg-id="${message.msg_id ?? ''}">
       <div class="user ${position}">${message.user}</div>
       ${replyHtml}
       ${mediaHtml}
@@ -484,56 +537,84 @@ function createMessageHtml(message, index, searchValue) {
     </div>`;
 }
 
-// 创建可点击的分隔符元素，通过接口按需加载上下文消息
-function createSeparatorElement(startIndex, endIndex, direction, searchValue) {
+function htmlToElement(html) {
+    const tpl = document.createElement('template');
+    tpl.innerHTML = (html || '').trim();
+    return tpl.content.firstElementChild;
+}
+
+// 创建可点击的分隔符元素，通过接口按需加载上下文消息（按 msg_id 取区间）
+function createSeparatorElement(gapId, startMsgId, endMsgId, direction, searchValue) {
     let separator = document.createElement('div');
     separator.className = 'separator ' + direction;
+    separator.dataset.gapId = String(gapId);
+    separator.dataset.startMsgId = String(startMsgId);
+    separator.dataset.endMsgId = String(endMsgId);
+    separator.dataset.direction = direction;
     if (direction === "up") {
         separator.innerHTML = ' <div style="color: white">.</div><div style="color: white">.</div><div style="color: white">.</div> <span style="color: #aaa; font-size: 0.9rem;">向上加载</span>';
     } else {
         separator.innerHTML = '<span style="color: #aaa; font-size: 0.9rem;">向下加载</span> <div style="color: white">.</div><div style="color: white">.</div><div style="color: white">.</div>';
     }
-    separator.dataset.start = startIndex;
-    separator.dataset.end = endIndex;
-    separator.dataset.direction = direction;
     separator.addEventListener('click', function () {
-        let s = parseInt(separator.dataset.start);
-        let e = parseInt(separator.dataset.end);
+        let s = parseInt(separator.dataset.startMsgId);
+        let e = parseInt(separator.dataset.endMsgId);
         let dir = separator.dataset.direction;
-        let count = Math.min(contextSize, e - s - 1);
-        let offset = dir === "down" ? s + 1 : e - count;
+        const gap = separator.dataset.gapId;
         let parent = separator.parentNode;
         let nextSibling = separator.nextSibling;
-        let prevSibling = separator.previousElementSibling;
-        fetchMessages(offset, count).then(data => {
-            let html = "";
-            data.messages.forEach((m, idx) => {
-                let messageHtml = createMessageHtml(m, offset + idx, searchValue);
-                messageHtml = messageHtml.replace('class="message', 'class="message context');
-                html += messageHtml;
-            });
-            parent.removeChild(separator);
-            let container = document.createElement('div');
-            container.innerHTML = html;
-            const firstChild = container.firstChild;
-            while (container.firstChild) {
-                parent.insertBefore(container.firstChild, nextSibling);
+
+        fetchMessagesBetweenMsgIds(s, e, dir, contextSize).then(data => {
+            const batch = Array.isArray(data.messages) ? data.messages : [];
+            const hasMore = Boolean(data.has_more);
+
+            if (!batch.length) {
+                const otherDir = dir === 'down' ? 'up' : 'down';
+                const other = parent.querySelector(`.separator[data-gap-id="${gap}"][data-direction="${otherDir}"]`);
+                parent.removeChild(separator);
+                if (other) other.remove();
+                return;
             }
+
+            parent.removeChild(separator);
+
+            const fragment = document.createDocumentFragment();
+            let firstInserted = null;
+            for (const m of batch) {
+                const idx = (m.msg_id ?? Math.random());
+                let messageHtml = createMessageHtml(m, idx, searchValue);
+                messageHtml = messageHtml.replace('class="message', 'class="message context');
+                const el = htmlToElement(messageHtml);
+                if (!el) continue;
+                if (!firstInserted) firstInserted = el;
+                fragment.appendChild(el);
+            }
+            parent.insertBefore(fragment, nextSibling);
+
+            const firstId = Number(batch[0]?.msg_id);
+            const lastId = Number(batch[batch.length - 1]?.msg_id);
+            const downSep = parent.querySelector(`.separator[data-gap-id="${gap}"][data-direction="down"]`);
+            const upSep = parent.querySelector(`.separator[data-gap-id="${gap}"][data-direction="up"]`);
+
             if (dir === "down") {
-                if (s + count < e - 1) {
-                    let newSep = createSeparatorElement(s + count, e, "down", searchValue);
+                if (upSep && Number.isFinite(lastId)) upSep.dataset.startMsgId = String(lastId);
+                if (hasMore && Number.isFinite(lastId)) {
+                    const newSep = createSeparatorElement(gap, lastId, e, "down", searchValue);
                     parent.insertBefore(newSep, nextSibling);
-                } else if (nextSibling) {
-                    parent.removeChild(nextSibling);
+                } else {
+                    if (upSep) upSep.remove();
                 }
             } else {
-                if (s + count < e - 1) {
-                    let newSep = createSeparatorElement(s, e - count, "up", searchValue);
-                    parent.insertBefore(newSep, firstChild);
-                } else if (prevSibling) {
-                    parent.removeChild(prevSibling);
+                if (downSep && Number.isFinite(firstId)) downSep.dataset.endMsgId = String(firstId);
+                if (hasMore && Number.isFinite(firstId) && firstInserted) {
+                    const newSep = createSeparatorElement(gap, s, firstId, "up", searchValue);
+                    parent.insertBefore(newSep, firstInserted);
+                } else {
+                    if (downSep) downSep.remove();
                 }
             }
+        }).catch(err => {
+            console.error('加载上下文消息失败:', err);
         });
     });
     return separator;
@@ -578,24 +659,29 @@ function loadInitialMessages() {
 }
 
 function waitForMediaToLoad() {
-    // 获取所有图片和视频
-    const images = Array.from(document.images).map(img => {
-        if (img.complete) return Promise.resolve();
-        return new Promise(resolve => {
-            img.addEventListener('load', resolve, {once: true});
-            img.addEventListener('error', resolve, {once: true});
-        });
-    });
+    const timeoutMs = 1200;
 
-    const videos = Array.from(document.querySelectorAll('video')).map(video => {
-        // readyState >= 3 表示可以播放（已加载足够数据）
-        if (video.readyState >= 3) return Promise.resolve();
-        return new Promise(resolve => {
-            video.addEventListener('loadeddata', resolve, {once: true});
-            video.addEventListener('error', resolve, {once: true});
-        });
-    });
-    return Promise.all([...images, ...videos]);
+    // 只等待“已经进入视口附近”的媒体，避免 lazy 图片导致一直等待
+    const images = Array.from(document.images)
+        .filter(img => !img.complete)
+        .filter(img => isInViewport(img))
+        .map(img => new Promise(resolve => {
+            img.addEventListener('load', resolve, { once: true });
+            img.addEventListener('error', resolve, { once: true });
+        }));
+
+    const videos = Array.from(document.querySelectorAll('video'))
+        .filter(video => video.readyState < 3)
+        .filter(video => isInViewport(video))
+        .map(video => new Promise(resolve => {
+            video.addEventListener('loadeddata', resolve, { once: true });
+            video.addEventListener('error', resolve, { once: true });
+        }));
+
+    return Promise.race([
+        Promise.all([...images, ...videos]),
+        new Promise(resolve => setTimeout(resolve, timeoutMs)),
+    ]);
 }
 
 // 向上加载更多消息
@@ -607,7 +693,7 @@ async function loadOlderMessages() {
     showTopLoader();
 
     // Keep viewport anchored to the current first rendered message.
-    const anchorEl = messagesContainer.firstElementChild;
+    const anchorEl = messagesContainer.querySelector('.message') || messagesContainer.firstElementChild;
     const anchorTop = anchorEl ? anchorEl.getBoundingClientRect().top : null;
     try {
         let newOffset = Math.max(0, oldestIndex - pageSize);
@@ -645,7 +731,84 @@ function loadOlderMessagesWithScrollAdjustment() {
     loadOlderMessages();
 }
 
-// 当非搜索模式下，滚动到页面顶部时触发加载更多
+async function loadOlderSearchMessages() {
+    if (!isSearching || isLoadingSearchMessages) return;
+    if (searchOldestOffset <= 0) return;
+
+    isLoadingSearchMessages = true;
+    showTopLoader();
+
+    const anchorEl = messagesContainer.querySelector('.message') || messagesContainer.firstElementChild;
+    const anchorTop = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+
+    try {
+        const newOffset = Math.max(0, searchOldestOffset - pageSize);
+        const count = searchOldestOffset - newOffset;
+        const data = await fetchSearchMessages(searchQuery, newOffset, count);
+        const batch = Array.isArray(data.messages) ? data.messages : [];
+        searchOldestOffset = Number(data.offset ?? newOffset);
+        searchTotal = Number(data.total ?? searchTotal);
+
+        if (batch.length > 0) {
+            const existingFirstMsgEl = messagesContainer.querySelector('.message[data-msg-id]');
+            const existingFirstId = existingFirstMsgEl ? Number(existingFirstMsgEl.dataset.msgId) : null;
+
+            const frag = document.createDocumentFragment();
+            for (let i = 0; i < batch.length; i++) {
+                const m = batch[i];
+                const idx = (m.msg_id ?? Math.random());
+                const el = htmlToElement(createMessageHtml(m, idx, searchQuery));
+                if (el) frag.appendChild(el);
+
+                if (i < batch.length - 1) {
+                    const a = Number(batch[i]?.msg_id);
+                    const b = Number(batch[i + 1]?.msg_id);
+                    if (Number.isFinite(a) && Number.isFinite(b) && b > a + 1) {
+                        const gapId = `gap-${++searchGapCounter}`;
+                        frag.appendChild(createSeparatorElement(gapId, a, b, 'down', searchQuery));
+                        frag.appendChild(createSeparatorElement(gapId, a, b, 'up', searchQuery));
+                    }
+                }
+            }
+
+            const lastId = Number(batch[batch.length - 1]?.msg_id);
+            if (Number.isFinite(lastId) && Number.isFinite(existingFirstId) && existingFirstId > lastId + 1) {
+                const gapId = `gap-${++searchGapCounter}`;
+                frag.appendChild(createSeparatorElement(gapId, lastId, existingFirstId, 'down', searchQuery));
+                frag.appendChild(createSeparatorElement(gapId, lastId, existingFirstId, 'up', searchQuery));
+            }
+
+            messagesContainer.insertBefore(frag, messagesContainer.firstChild);
+        }
+    } catch (error) {
+        console.error('加载搜索结果失败:', error);
+    } finally {
+        isLoadingSearchMessages = false;
+        hideTopLoader();
+
+        if (anchorEl && anchorTop !== null) {
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            const newTop = anchorEl.getBoundingClientRect().top;
+            window.scrollBy(0, newTop - anchorTop);
+
+            nextTick()
+                .then(() => waitForMediaToLoad())
+                .then(() => {
+                    const topAfterMedia = anchorEl.getBoundingClientRect().top;
+                    window.scrollBy(0, topAfterMedia - anchorTop);
+                })
+                .catch(() => { });
+        }
+        updateSearchMoreResultsButton();
+    }
+}
+
+function loadOlderSearchMessagesWithScrollAdjustment() {
+    if (isLoadingSearchMessages) return;
+    loadOlderSearchMessages();
+}
+
+// 滚动到页面顶部时触发加载更多
 let debounceTimer;
 
 function checkScroll() {
@@ -653,6 +816,10 @@ function checkScroll() {
     debounceTimer = setTimeout(function () {
         if (isReactionSorting && window.scrollY < 50) {
             loadMoreReactionMessages(false);
+            return;
+        }
+        if (isSearching && window.scrollY < 50) {
+            loadOlderSearchMessagesWithScrollAdjustment();
             return;
         }
         if (!isSearching && !isReactionSorting && window.scrollY < 50 && oldestIndex > 0) {
@@ -663,7 +830,7 @@ function checkScroll() {
 
 window.addEventListener('scroll', checkScroll);
 
-// 搜索函数，服务器返回匹配消息及其索引，非连续组之间插入加载按钮
+// 搜索函数：分页返回结果（同 get_messages）
 function searchMessages() {
     overlay.classList.remove('hidden');
     if (isReactionSorting) {
@@ -674,44 +841,103 @@ function searchMessages() {
     const searchValue = document.getElementById('searchBox').value.trim().toLowerCase();
     if (!searchValue) {
         isSearching = false;
+        searchQuery = '';
+        searchOldestOffset = 0;
+        searchTotal = 0;
+        isLoadingSearchMessages = false;
+        updateSearchMoreResultsButton();
         messagesContainer.innerHTML = "";
-        loadInitialMessages();
+        loadMessages();
         overlay.classList.add('hidden');
         return;
     }
     isSearching = true;
+    searchQuery = searchValue;
     try {
-        fetch(`../search/${chatId}?q=${encodeURIComponent(searchValue)}`)
-            .then(response => response.json())
-            .then(data => {
-                const results = data.results;
+        fetchSearchMessages(searchQuery, -pageSize, pageSize)
+            .then(async (data) => {
+                const batch = Array.isArray(data.messages) ? data.messages : [];
+                searchOldestOffset = Number(data.offset ?? 0);
+                searchTotal = Number(data.total ?? 0);
+
                 messagesContainer.innerHTML = "";
-                let fragment = document.createDocumentFragment();
-                if (results.length > 0 && results[0].index > 0) {
-                    fragment.appendChild(createSeparatorElement(0, results[0].index, "up", searchValue));
-                }
-                let lastIndex = null;
-                results.forEach(r => {
-                    const idx = r.index;
-                    if (lastIndex !== null && idx !== lastIndex + 1) {
-                        fragment.appendChild(createSeparatorElement(lastIndex, idx, "down", searchValue));
-                        fragment.appendChild(createSeparatorElement(lastIndex, idx, "up", searchValue));
+                searchGapCounter = 0;
+                const frag = document.createDocumentFragment();
+                for (let i = 0; i < batch.length; i++) {
+                    const m = batch[i];
+                    const idx = (m.msg_id ?? Math.random());
+                    const el = htmlToElement(createMessageHtml(m, idx, searchValue));
+                    if (el) frag.appendChild(el);
+
+                    if (i < batch.length - 1) {
+                        const a = Number(batch[i]?.msg_id);
+                        const b = Number(batch[i + 1]?.msg_id);
+                        if (Number.isFinite(a) && Number.isFinite(b) && b > a + 1) {
+                            const gapId = `gap-${++searchGapCounter}`;
+                            frag.appendChild(createSeparatorElement(gapId, a, b, 'down', searchValue));
+                            frag.appendChild(createSeparatorElement(gapId, a, b, 'up', searchValue));
+                        }
                     }
-                    let tempDiv = document.createElement('div');
-                    tempDiv.innerHTML = createMessageHtml(r, idx, searchValue);
-                    fragment.appendChild(tempDiv.firstElementChild);
-                    lastIndex = idx;
-                });
-                if (lastIndex !== null && lastIndex < totalMessages - 1) {
-                    fragment.appendChild(createSeparatorElement(lastIndex, totalMessages, "down", searchValue));
                 }
-                messagesContainer.appendChild(fragment);
+
+                // 为“最新一条搜索命中”补一个向下加载（拉取它之后的上下文消息）
+                const newestHitId = batch.length ? Number(batch[batch.length - 1]?.msg_id) : null;
+                const latestId = await ensureLatestChatMsgId();
+                if (Number.isFinite(newestHitId) && Number.isFinite(latestId) && latestId > newestHitId + 1) {
+                    const gapId = `gap-${++searchGapCounter}`;
+                    frag.appendChild(createSeparatorElement(gapId, newestHitId, latestId + 1, 'down', searchValue));
+                }
+
+                messagesContainer.appendChild(frag);
+
+                await nextTick();
+                await nextFrame(); // 先让内容渲染出来，避免 loader 卡住直到滚动才消失
+                overlay.classList.add('hidden');
+
+                // 让页面滚动到结果底部（更符合“最新消息在底部”的阅读习惯）
+                window.scrollTo(0, document.body.scrollHeight);
+
+                // 等待视口附近媒体（有超时，不会因为 lazy 图片卡死）
+                await waitForMediaToLoad();
+
+                await ensureSearchScrollable();
+            })
+            .catch((e) => {
+                console.error(e);
                 overlay.classList.add('hidden');
             });
     } catch (error) {
         console.error(error);
         overlay.classList.add('hidden');
     }
+}
+
+function updateSearchMoreResultsButton() {
+    const existing = document.getElementById('searchMoreResults');
+    const shouldShow = isSearching && searchOldestOffset > 0 && !isPageScrollable();
+    if (!shouldShow) {
+        if (existing) existing.remove();
+        return;
+    }
+    if (existing) return;
+
+    const btn = document.createElement('div');
+    btn.id = 'searchMoreResults';
+    btn.className = 'separator up';
+    btn.innerHTML = '<span style=\"color: #aaa; font-size: 0.9rem;\">向上加载更多搜索结果</span>';
+    btn.addEventListener('click', () => loadOlderSearchMessagesWithScrollAdjustment());
+    messagesContainer.insertBefore(btn, messagesContainer.firstChild);
+}
+
+async function ensureSearchScrollable() {
+    // 如果搜索结果太少导致没有滚动条，则自动补一些更老的搜索结果，直到可滚动或没有更多
+    let guard = 0;
+    while (isSearching && searchOldestOffset > 0 && !isPageScrollable() && guard < 5) {
+        guard += 1;
+        await loadOlderSearchMessages();
+        await nextTick();
+    }
+    updateSearchMoreResultsButton();
 }
 
 document.addEventListener('DOMContentLoaded', loadMessages);
