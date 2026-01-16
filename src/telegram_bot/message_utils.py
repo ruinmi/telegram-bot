@@ -6,6 +6,8 @@ from typing import List, Dict, Any
 from bdpan import BaiduPanClient, BaiduPanConfig
 import re
 
+import requests
+
 def load_json(file_path: str) -> dict:
     """Load JSON data from a file."""
     with open(file_path, "r", encoding="utf-8") as infile:
@@ -16,6 +18,36 @@ def convert_timestamp_to_date(timestamp: int, tz) -> str:
     """Convert unix timestamp to formatted date string."""
     return datetime.fromtimestamp(timestamp, tz).strftime('%Y-%m-%d %H:%M:%S')
 
+def is_quark_link_stale(link: str) -> bool:
+    """Check if a Quark link is stale."""
+    pwd_id = link.split('/s/')[1].split('?')[0]
+    
+    url = 'https://drive-h.quark.cn/1/clouddrive/share/sharepage/token'
+    params = {
+        'pr': 'ucpro',
+        'fr': 'pc',
+        'uc_param_str': '',
+        '__dt': 445,
+        '__t': int(datetime.now().timestamp() * 1000)
+    }
+    request_payload = {
+        'pwd_id': pwd_id,
+        'passcode': '',
+        'support_visit_limit_private_share': "true"
+    }
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+        'Referer': 'https://pan.quark.cn/',
+        'Content-Type': 'application/json'
+    }
+    resp = requests.post(url, params=params, json=request_payload, headers=headers)
+    try:
+        data = resp.json()
+        if int(data.get('code', 0)) == 41011:
+            return True
+    except Exception as e:
+        print(f"Error checking quark link: {e}")
+    return False
 
 def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | None = None) -> List[Dict[str, Any]]:
     from .project_logger import get_logger
@@ -90,23 +122,33 @@ def filter_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Filter messages"""
     filtered_messages = []
     
-    # filter stale pan baidu link messages
     bdpan = BaiduPanClient(
         config=BaiduPanConfig(
             cookie_file='auth/cookies.txt',
         )
     )
+    
     for msg in messages:
         msg_text = msg.get('text', '') or ''
         links = re.findall(r'(https?://\S+)', msg_text)
         for link in links:
+            # filter stale pan baidu link messages
             if bdpan.is_share_link(link):
                 if not bdpan.is_link_stale(link):
                     filtered_messages.append(msg)
                     break
+                
+            # filter stale quark links
+            elif link.startswith('https://pan.quark.cn'):
+                if not is_quark_link_stale(link):
+                    filtered_messages.append(msg)
+                    break
+            
             else:
                 filtered_messages.append(msg)
                 break
+            
+        # If no links found, keep the message
         if not links:
             filtered_messages.append(msg)
             

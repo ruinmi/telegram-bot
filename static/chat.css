@@ -376,6 +376,53 @@ body {
     outline: none;
 }
 
+.top-loader {
+    position: fixed;
+    left: 0;
+    right: 0;
+    top: 54px;
+    z-index: 1001;
+    display: flex;
+    justify-content: center;
+    pointer-events: none;
+}
+
+.top-loader.hidden {
+    display: none;
+}
+
+.top-loader__inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 13px;
+    backdrop-filter: blur(6px);
+}
+
+.top-loader__spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    border-top-color: #0089e5;
+    animation: spinSimple 1s linear infinite;
+}
+
+@keyframes spinSimple {
+    0% {
+        transform: rotate(0deg);
+    }
+
+    100% {
+        transform: rotate(360deg);
+    }
+}
+
 #overlay {
     background: #000000d1;
     position: fixed;

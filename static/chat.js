@@ -2,6 +2,7 @@
 let allMessages = [];
 const overlay = document.getElementById('overlay');
 overlay.classList.remove('hidden');
+const topLoader = document.getElementById('topLoader');
 const chatId = window.CHAT_ID;
 const pageSize = 20;
 const contextSize = 5
@@ -14,6 +15,14 @@ let reactionEmoticon = '';
 let reactionOffset = 0;
 let reactionTotal = 0;
 let isLoadingReactionMessages = false;
+
+if ('scrollRestoration' in history) {
+    history.scrollRestoration = 'manual';
+}
+
+function nextTick() {
+    return new Promise(resolve => setTimeout(resolve, 0));
+}
 
 function resolveMediaUrl(url) {
     const raw = (url || '').trim();
@@ -194,11 +203,13 @@ async function loadMoreReactionMessages(isInitial = false) {
 
         if (isInitial) {
             messagesContainer.innerHTML = html;
+            await nextTick();
             await waitForMediaToLoad();
             window.scrollTo(0, document.body.scrollHeight);
         } else {
             const prevHeight = document.body.scrollHeight;
             messagesContainer.insertAdjacentHTML('afterbegin', html);
+            await nextTick();
             await waitForMediaToLoad();
             const newHeight = document.body.scrollHeight;
             window.scrollTo(0, window.scrollY + (newHeight - prevHeight));
@@ -230,6 +241,18 @@ function loadMessages() {
 let currentStartIndex;
 let isSearching = false;
 const messagesContainer = document.getElementById('messages');
+
+function showTopLoader() {
+    if (!topLoader) return;
+    topLoader.classList.remove('hidden');
+    topLoader.setAttribute('aria-hidden', 'false');
+}
+
+function hideTopLoader() {
+    if (!topLoader) return;
+    topLoader.classList.add('hidden');
+    topLoader.setAttribute('aria-hidden', 'true');
+}
 
 function highlightText(text, searchValue) {
     if (!searchValue) return text;
@@ -536,9 +559,12 @@ function renderMessagesRange(start, end, prepend = false) {
 function loadInitialMessages() {
     currentStartIndex = allMessages.length;
     renderMessagesRange(0, currentStartIndex).then(() => {
-        waitForMediaToLoad().then(() => {
+        setTimeout(async () => {
+            await nextTick();
+            await waitForMediaToLoad();
             window.scrollTo(0, document.body.scrollHeight);
-        });
+            requestAnimationFrame(() => window.scrollTo(0, document.body.scrollHeight));
+        }, 0);
     });
 
     function checkAndLoadIfNotScrollable() {
@@ -578,6 +604,11 @@ let isLoadingOlderMessages = false;
 async function loadOlderMessages() {
     if (oldestIndex <= 0 || isLoadingOlderMessages) return;
     isLoadingOlderMessages = true;
+    showTopLoader();
+
+    // Keep viewport anchored to the current first rendered message.
+    const anchorEl = messagesContainer.firstElementChild;
+    const anchorTop = anchorEl ? anchorEl.getBoundingClientRect().top : null;
     try {
         let newOffset = Math.max(0, oldestIndex - pageSize);
         let count = oldestIndex - newOffset;
@@ -590,6 +621,22 @@ async function loadOlderMessages() {
         console.error('加载旧消息失败:', error);
     } finally {
         isLoadingOlderMessages = false;
+        hideTopLoader();
+
+        if (anchorEl && anchorTop !== null) {
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            const newTop = anchorEl.getBoundingClientRect().top;
+            window.scrollBy(0, newTop - anchorTop);
+
+            // Images are rendered via setTimeout in createMessageHtml; adjust once more after they settle.
+            nextTick()
+                .then(() => waitForMediaToLoad())
+                .then(() => {
+                    const topAfterMedia = anchorEl.getBoundingClientRect().top;
+                    window.scrollBy(0, topAfterMedia - anchorTop);
+                })
+                .catch(() => { });
+        }
     }
 }
 

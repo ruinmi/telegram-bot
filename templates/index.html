@@ -628,6 +628,21 @@
 
     let selectedChatId = null;
     const cleanupPollers = new Map();
+    const cleanupButtons = new Map();
+
+    function setCleanupButtonState(chatId, state, jobId) {
+      const btn = cleanupButtons.get(chatId);
+      if (!btn) return;
+
+      if (state === 'running') {
+        btn.dataset.mode = 'query';
+        btn.textContent = '查询进度';
+        return;
+      }
+
+      btn.dataset.mode = 'start';
+      btn.textContent = '删除失效链接消息';
+    }
 
     function stopCleanupPoll(chatId) {
       const timer = cleanupPollers.get(chatId);
@@ -643,12 +658,17 @@
         fetch('cleanup_stale_baidu_links_status/' + encodeURIComponent(chatId))
           .then(r => r.json())
           .then(data => {
-            if (!data || data.status === 'idle') return;
+            if (!data || data.status === 'idle') {
+              setCleanupButtonState(chatId, 'idle');
+              stopCleanupPoll(chatId);
+              return;
+            }
             if (jobId && data.job_id && data.job_id !== jobId && data.status === 'running') return;
 
             if (data.status === 'running') {
               const scanned = data.scanned_messages ?? 0;
               const deleted = data.deleted_messages ?? 0;
+              setCleanupButtonState(chatId, 'running', data.job_id || jobId);
               showToast(`清理中：已扫描 ${scanned} 条，已删除 ${deleted} 条…`);
               return;
             }
@@ -658,11 +678,13 @@
               const scanned = data.scanned_messages ?? 0;
               const candidates = data.candidate_messages ?? 0;
               const deleted = data.deleted_messages ?? 0;
+              setCleanupButtonState(chatId, 'done');
               showToast(`清理完成：扫描 ${scanned} 条，候选 ${candidates} 条，已删除 ${deleted} 条。`);
               return;
             }
 
             if (data.status === 'error') {
+              setCleanupButtonState(chatId, 'error');
               showToast(`清理失败：${data.last_error || '未知错误'}`, 'error');
             }
           })
@@ -679,6 +701,7 @@
         .then(data => {
           const ul = document.getElementById('chatList');
           ul.innerHTML = '';
+          cleanupButtons.clear();
           data.chats.forEach(chat => {
             const li = document.createElement('li');
             li.className = 'chat-item';
@@ -760,10 +783,30 @@
             const cleanupBtn = document.createElement('button');
             cleanupBtn.type = 'button';
             cleanupBtn.textContent = '删除失效链接消息';
+            cleanupBtn.dataset.mode = 'start';
+            cleanupButtons.set(chat.id, cleanupBtn);
+
+            fetch('cleanup_stale_baidu_links_status/' + encodeURIComponent(chat.id))
+              .then(r => r.json())
+              .then(status => {
+                if (status && status.status === 'running') {
+                  setCleanupButtonState(chat.id, 'running', status.job_id);
+                } else {
+                  setCleanupButtonState(chat.id, 'idle');
+                }
+              })
+              .catch(() => { });
             cleanupBtn.addEventListener('click', (event) => {
               event.preventDefault();
               event.stopPropagation();
               const name = chat.remark || chat.id;
+              const mode = cleanupBtn.dataset.mode || 'start';
+
+              if (mode === 'query') {
+                showToast('正在查询清理进度…');
+                startCleanupPoll(chat.id, null);
+                return;
+              }
               if (!confirm(`确认清理失效百度网盘链接：${name}？\n将遍历数据库中包含百度网盘分享链接的消息，若消息内所有链接都已失效则删除该消息。\n（后台执行，耗时取决于消息数量）`)) return;
 
               cleanupBtn.disabled = true;
@@ -779,12 +822,14 @@
                     showToast(msg, 'error');
                     if (r.status === 409 && data && data.status === 'running') {
                       showToast('清理任务已在运行，正在获取进度…');
+                      setCleanupButtonState(chat.id, 'running', data.job_id);
                       startCleanupPoll(chat.id, data.job_id);
                     }
                     cleanupBtn.disabled = false;
                     return;
                   }
                   showToast('已启动清理（后台执行）。');
+                  setCleanupButtonState(chat.id, 'running', data && data.job_id);
                   startCleanupPoll(chat.id, data && data.job_id);
                   cleanupBtn.disabled = false;
                 })
