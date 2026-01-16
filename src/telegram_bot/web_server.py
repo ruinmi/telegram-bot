@@ -42,9 +42,9 @@ _cleanup_baidu_jobs: dict[str, dict] = {}
 _cleanup_baidu_jobs_lock = Lock()
 _cleanup_baidu_global_lock = Lock()
 
-_CLEANUP_BAIDU_MIN_INTERVAL_SECONDS = 1.6
+_CLEANUP_BAIDU_MIN_INTERVAL_SECONDS = 0.7
 _CLEANUP_BAIDU_JITTER_SECONDS = 0.4
-_CLEANUP_BAIDU_PROGRESS_FLUSH_EVERY = 25
+_CLEANUP_BAIDU_PROGRESS_FLUSH_EVERY = 10
 
 
 class AddChatRequest(BaseModel):
@@ -316,6 +316,10 @@ def _cleanup_stale_baidu_links_worker(chat_id: str, remark: str | None, job_id: 
     deleted_messages = 0
     checked_links = 0
     errors = 0
+    
+    if os.path.exists('last_cleanup.txt'):
+        with open('last_cleanup.txt', 'r') as f:
+            omit_num = int(f.read().strip() or '0')
 
     def is_link_stale_cached(link: str) -> bool | None:
         nonlocal last_call_monotonic, checked_links, errors
@@ -354,6 +358,7 @@ def _cleanup_stale_baidu_links_worker(chat_id: str, remark: str | None, job_id: 
             (chat_id,),
         )
         rows = cur.fetchall()
+        rows = rows[omit_num:]
 
         delete_sql = "DELETE FROM messages WHERE chat_id=? AND msg_id=?"
         deletes_since_commit = 0
@@ -403,8 +408,10 @@ def _cleanup_stale_baidu_links_worker(chat_id: str, remark: str | None, job_id: 
                 cur_delete.execute(delete_sql, (chat_id, int(msg_id)))
                 deleted_messages += 1
                 deletes_since_commit += 1
-                if deletes_since_commit >= 50:
+                if deletes_since_commit >= 5:
                     conn.commit()
+                    with open('_last_cleanup.txt', 'w') as f:
+                        f.write(str(omit_num + scanned_messages))
                     deletes_since_commit = 0
             except Exception as e:
                 errors += 1
@@ -424,6 +431,8 @@ def _cleanup_stale_baidu_links_worker(chat_id: str, remark: str | None, job_id: 
 
         conn.commit()
         conn.close()
+        if os.path.exists('last_cleanup.txt'):
+            os.remove('last_cleanup.txt')
 
         with _cleanup_baidu_jobs_lock:
             job["status"] = "done"

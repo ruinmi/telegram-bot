@@ -15,6 +15,104 @@ let reactionOffset = 0;
 let reactionTotal = 0;
 let isLoadingReactionMessages = false;
 
+function resolveMediaUrl(url) {
+    const raw = (url || '').trim();
+    if (!raw) return '';
+    if (/^https?:\/\//i.test(raw)) return raw;
+
+    let cleaned = raw;
+    while (cleaned.startsWith('../')) cleaned = cleaned.slice(3);
+    if (cleaned.startsWith('./')) cleaned = cleaned.slice(2);
+
+    if (cleaned.startsWith('/')) return cleaned;
+    return `/${cleaned}`;
+}
+
+const BROKEN_IMAGE_PLACEHOLDER = (() => {
+    const svg = `
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="480" viewBox="0 0 640 480">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#2b2b2b"/>
+      <stop offset="1" stop-color="#151515"/>
+    </linearGradient>
+  </defs>
+  <rect width="640" height="480" fill="url(#g)"/>
+  <rect x="32" y="32" width="576" height="416" rx="28" fill="none" stroke="#ffffff2b" stroke-width="4"/>
+  <g transform="translate(0,8)" fill="none" stroke="#ffffffb0" stroke-width="10" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="220" y="170" width="200" height="160" rx="18" stroke="#ffffff66"/>
+    <path d="M260 310h120" stroke="#ffffff66"/>
+  </g>
+  <text x="320" y="390" text-anchor="middle" font-family="Segoe UI, PingFang SC, Microsoft YaHei, sans-serif" font-size="22" fill="#ffffffb0">
+    图片加载失败
+  </text>
+</svg>`.trim();
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+})();
+
+function applyImageFallback(imgEl) {
+    if (!imgEl) return;
+    if (imgEl.dataset.fallbackApplied === '1') return;
+    imgEl.dataset.fallbackApplied = '1';
+    imgEl.classList.add('img-broken');
+    imgEl.src = BROKEN_IMAGE_PLACEHOLDER;
+}
+
+let _imageViewer = null;
+function ensureImageViewer() {
+    if (_imageViewer) return _imageViewer;
+
+    const root = document.createElement('div');
+    root.id = 'imageViewer';
+    root.className = 'image-viewer hidden';
+    root.innerHTML = `
+      <div class="image-viewer__backdrop" data-action="close"></div>
+      <div class="image-viewer__content" role="dialog" aria-modal="true">
+        <button type="button" class="image-viewer__close" data-action="close" aria-label="关闭">×</button>
+        <a class="image-viewer__download" data-role="download" download target="_blank" rel="noopener">下载</a>
+        <img class="image-viewer__img" data-role="img" alt="图片预览" />
+      </div>
+    `;
+    document.body.appendChild(root);
+
+    const img = root.querySelector('[data-role="img"]');
+    img.addEventListener('error', () => applyImageFallback(img));
+
+    const close = () => {
+        root.classList.add('hidden');
+        document.body.classList.remove('no-scroll');
+    };
+
+    root.addEventListener('click', (e) => {
+        const action = e.target?.dataset?.action;
+        if (action === 'close') close();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && !root.classList.contains('hidden')) close();
+    });
+
+    _imageViewer = {
+        root,
+        img,
+        close,
+        downloadLink: root.querySelector('[data-role="download"]'),
+    };
+    return _imageViewer;
+}
+
+function openImageViewer(url) {
+    const src = resolveMediaUrl(url);
+    if (!src) return;
+    const viewer = ensureImageViewer();
+    viewer.img.dataset.fallbackApplied = '0';
+    viewer.img.classList.remove('img-broken');
+    viewer.img.src = src;
+    viewer.downloadLink.href = src;
+    viewer.root.classList.remove('hidden');
+    document.body.classList.add('no-scroll');
+}
+
 // 动态加载 JSON 数据
 function fetchMessages(offset, limit) {
     return fetch(`../messages/${chatId}?offset=${offset}&limit=${limit}`)
@@ -217,8 +315,11 @@ function createMessageHtml(message, index, searchValue) {
         let imgPart = '';
 
         if (d.msg_file_name && /\.(png|jpe?g|gif|webp)$/i.test(d.msg_file_name)) {
+            const src = resolveMediaUrl(d.msg_file_name);
             imgPart = `<div class="reply-image">
-                   <img src="${d.msg_file_name}" alt="图片">
+                   <div class="img-tile reply-image__btn" data-img-src="${src}">
+                     <img src="${src}" alt="图片" loading="lazy">
+                   </div>
                  </div>`;
         } else if (d.msg_files) {
             const files = Array.isArray(d.msg_files)
@@ -226,7 +327,7 @@ function createMessageHtml(message, index, searchValue) {
                 : JSON.parse(d.msg_files);
             imgPart = files.map(fn =>
                 /\.(png|jpe?g|gif|webp)$/i.test(fn)
-                    ? `<div class="reply-image"><img src="${fn}" alt="图片"></div>`
+                    ? `<div class="reply-image"><div class="img-tile reply-image__btn" data-img-src="${resolveMediaUrl(fn)}"><img src="${resolveMediaUrl(fn)}" alt="图片" loading="lazy"></div></div>`
                     : ''
             ).join('');
         }
@@ -291,7 +392,7 @@ function createMessageHtml(message, index, searchValue) {
         mediaHtml = `
       <div class="video">
         <video controls style="max-width:100%;border-radius:6px;">
-          <source src="${message.msg_file_name}" type="video/mp4">
+          <source src="${resolveMediaUrl(message.msg_file_name)}" type="video/mp4">
         </video>
       </div>`;
     }
@@ -300,7 +401,7 @@ function createMessageHtml(message, index, searchValue) {
         const short = message.msg_file_name.split('/').pop();
         mediaHtml = `
       <div class="download">
-        <a href="${message.msg_file_name}" download>📎 ${short}</a>
+        <a href="${resolveMediaUrl(message.msg_file_name)}" download>📎 ${short}</a>
       </div>`;
     }
 
@@ -679,10 +780,11 @@ function renderImagesInBubble(containerEl, imageList, options = {}) {
         const scale = Math.min(maxWidth / img.width, maxHeight / img.height);
         const w = Math.round(img.width * scale);
         const h = Math.round(img.height * scale);
+        const src = resolveMediaUrl(img.url);
 
         if (scale === maxHeight / img.height) {
             const image_bg = document.createElement('img');
-            image_bg.src = img.url.startsWith('http') ? img.url : `../${img.url}`;
+            image_bg.src = src;
             image_bg.alt = '图片';
             image_bg.style.width = `100%`;
             image_bg.style.height = `100%`;
@@ -694,25 +796,43 @@ function renderImagesInBubble(containerEl, imageList, options = {}) {
         }
 
         const image = document.createElement('img');
-        image.src          = img.url.startsWith('http') ? img.url : `../${img.url}`;
+        image.src = src;
         image.alt          = '图片';
         image.style.width  = `${w}px`;
         image.style.height = `${h}px`;
         image.style.objectFit   = 'cover';
+        image.loading = 'lazy';
+        image.addEventListener('error', () => applyImageFallback(image), { once: true });
         // if (options.hasReaction) {
         //     image.style.marginTop = '0.4rem';
         // } 
 
-        // 包裹 <a> 链接
-        const link = document.createElement('a');
-        link.href   = `../${img.url}`;
-        link.target = '_blank';
-        link.style.zIndex = '1';
-        link.appendChild(image);
-
-        containerEl.appendChild(link);
+        const tile = document.createElement('div');
+        tile.className = 'img-tile';
+        tile.dataset.imgSrc = src;
+        tile.style.zIndex = '1';
+        tile.style.width = `${w}px`;
+        tile.style.height = `${h}px`;
+        tile.appendChild(image);
+        containerEl.appendChild(tile);
     });
 }
+
+document.addEventListener('click', (event) => {
+    const tile = event.target.closest('.img-tile[data-img-src]');
+    if (!tile) return;
+    event.preventDefault();
+    event.stopPropagation();
+    openImageViewer(tile.dataset.imgSrc);
+});
+
+// error 事件不冒泡：用捕获阶段统一处理图片加载失败
+document.addEventListener('error', (event) => {
+    const target = event.target;
+    if (!target || target.tagName !== 'IMG') return;
+    if (!target.closest('.img-tile') && !target.closest('.image-viewer')) return;
+    applyImageFallback(target);
+}, true);
 
 
 

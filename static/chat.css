@@ -396,6 +396,42 @@ body {
     overflow: hidden;
 }
 
+/* 图片点击容器（用于当前页预览） */
+.img-tile {
+    position: relative;
+    display: block;
+    border-radius: .75rem;
+    overflow: hidden;
+    cursor: zoom-in;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.img-tile img {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    border-radius: inherit;
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.img-tile img.img-broken {
+    object-fit: contain;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.reply-image__btn {
+    width: 24px;
+    height: 24px;
+    border-radius: .25rem;
+}
+
+.reply-image__btn img {
+    width: 24px;
+    height: 24px;
+    border-radius: .25rem;
+}
+
 /* 单个图片样式 */
 .image-grid img {
     display: block;
@@ -404,6 +440,82 @@ body {
 }
 .has-image {
     min-width: min(450px, 45vw);
+}
+
+.no-scroll {
+    overflow: hidden;
+}
+
+.image-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+}
+
+.image-viewer.hidden {
+    display: none;
+}
+
+.image-viewer__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.88);
+    backdrop-filter: blur(6px);
+}
+
+.image-viewer__content {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 96vw;
+    max-height: 92vh;
+}
+
+.image-viewer__img {
+    max-width: 96vw;
+    max-height: 92vh;
+    border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    background: rgba(17, 17, 17, 0.8);
+}
+
+.image-viewer__close {
+    position: absolute;
+    top: -12px;
+    right: -12px;
+    width: 36px;
+    height: 36px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    font-size: 22px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.image-viewer__download {
+    position: absolute;
+    top: -12px;
+    left: -12px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(0, 0, 0, 0.55);
+    color: #fff;
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.image-viewer__close:hover,
+.image-viewer__download:hover {
+    background: rgba(0, 0, 0, 0.72);
 }
 
 @media screen and (max-width: 768px) {
