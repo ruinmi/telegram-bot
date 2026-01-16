@@ -1,7 +1,10 @@
 og_data.json
 update_messages.log
+chats.json
+workers_started.flag
 __pycache__/
 *.pyc
 downloads/
 data/
 logs/
+.venv/

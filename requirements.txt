@@ -2,3 +2,6 @@ flask
 gunicorn; platform_system != "Windows"
 waitress; platform_system == "Windows"
 requests
+beautifulsoup4
+pillow
+bdpan

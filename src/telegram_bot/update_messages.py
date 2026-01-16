@@ -1,16 +1,17 @@
 import os
 import subprocess
-from project_logger import get_logger
+from .project_logger import get_logger
 import time
 import json
 import uuid
 import requests
-import urllib
+import urllib.parse
 import threading
-from db_utils import get_last_export_time, set_exported_time
+from .db_utils import get_last_export_time, set_exported_time
+from .paths import BASE_DIR, ensure_runtime_dirs
 
 tdl_lock = threading.Lock()
-script_dir = os.path.dirname(os.path.abspath(__file__))
+ensure_runtime_dirs()
 
 IMAGE_EXTENSIONS = "jpg,jpeg,png,webp,gif"
 
@@ -83,7 +84,7 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
         # Download chat files using tdl dl command
         if is_download:
             logger.info("Downloading files...")
-            download_path = os.path.join(script_dir, 'downloads', str(their_id))
+            download_path = str(BASE_DIR / 'downloads' / str(their_id))
             os.makedirs(download_path, exist_ok=True)
             download_command = [
                 'tdl',
@@ -132,7 +133,7 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
 
 def download(url, their_id, remark=None):
     logger = get_logger(remark or their_id)
-    download_path = os.path.join(script_dir, 'downloads', str(their_id))
+    download_path = str(BASE_DIR / 'downloads' / str(their_id))
     os.makedirs(download_path, exist_ok=True)
     
 
@@ -158,7 +159,7 @@ def redownload_chat_files(their_id, download_images_only=False, remark=None):
     """
     logger = get_logger(remark or their_id)
     current_time = str(int(time.time()))
-    data_dir = os.path.join(script_dir, 'data', str(their_id))
+    data_dir = str(BASE_DIR / 'data' / str(their_id))
     os.makedirs(data_dir, exist_ok=True)
     msg_json_temp_path = os.path.join(data_dir, f'{their_id}_redownload_temp.json')
 
@@ -181,7 +182,7 @@ def redownload_chat_files(their_id, download_images_only=False, remark=None):
         logger.error("Redownload export failed (see stdout/stderr above).")
         return False
 
-    download_path = os.path.join(script_dir, 'downloads', str(their_id))
+    download_path = str(BASE_DIR / 'downloads' / str(their_id))
     os.makedirs(download_path, exist_ok=True)
     download_command = [
         'tdl',

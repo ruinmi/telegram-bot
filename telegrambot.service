@@ -1,17 +1,21 @@
-# /etc/systemd/system/telegrambot.service
 [Unit]
-Description=Telegram Bot
+Description=Telegram Bot (Flask + Gunicorn)
 After=network.target
 
 [Service]
-WorkingDirectory=/telegram-bot
-ExecStart=/usr/bin/env bash run.sh
-ExecStop=/usr/bin/env bash -c 'rm -f /telegram-bot/workers_started.flag'
+User=test
+Group=test
+WorkingDirectory=/opt/telegram-bot
+Environment="BOT_USERNAME=test"
+Environment="BOT_PASSWORD=test"
+Environment="HOST=0.0.0.0"
+Environment="PORT=8080"
+Environment="PYTHONPATH=/opt/telegram-bot/src"
+ExecStart=/opt/telegram-bot/.venv/bin/gunicorn -w 4 -b 0.0.0.0:8080 telegram_bot.web_server:app
 Restart=always
-User=www-data
-Environment=HOST=0.0.0.0
-Environment=PORT=8000
-RestartSec=5
+RestartSec=3
+StandardOutput=append:/opt/telegram-bot/server.log
+StandardError=append:/opt/telegram-bot/server.log
 
 [Install]
 WantedBy=multi-user.target

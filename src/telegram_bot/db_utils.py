@@ -3,13 +3,12 @@ import sqlite3
 import json
 import re
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
+from .paths import DATA_DIR
 
 def get_db_path(chat_id):
-    data_dir = os.path.join(script_dir, 'data', chat_id)
-    if not os.path.exists(data_dir):
-        os.makedirs(data_dir)
-    return os.path.join(data_dir, 'messages.db')
+    data_dir = DATA_DIR / str(chat_id)
+    data_dir.mkdir(parents=True, exist_ok=True)
+    return str(data_dir / 'messages.db')
 
 def init_db(conn):
     conn.execute('''

@@ -4,8 +4,9 @@ import subprocess
 import atexit
 import shutil
 
-from project_logger import get_logger
-from db_utils import get_connection, get_db_path
+from .project_logger import get_logger
+from .db_utils import get_connection, get_db_path
+from .paths import BASE_DIR, DOWNLOADS_DIR, STATIC_DIR, TEMPLATES_DIR, ensure_runtime_dirs
 import sqlite3
 import time
 from threading import Thread, Event
@@ -13,16 +14,20 @@ from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, render_template, Response, abort
 from werkzeug.utils import safe_join
 
-from main import handle
-from update_messages import redownload_chat_files
+from .archiver import handle
+from .update_messages import redownload_chat_files
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-app = Flask(__name__, static_url_path='', static_folder=script_dir, template_folder=script_dir)
+ensure_runtime_dirs()
+app = Flask(
+    __name__,
+    template_folder=str(TEMPLATES_DIR),
+    static_folder=str(STATIC_DIR),
+)
 
 # 配置日志
 logger = get_logger('server')
-CHATS_FILE = os.path.join(script_dir, 'chats.json')
-WORKERS_FLAG = os.path.join(script_dir, 'workers_started.flag')
+CHATS_FILE = str(BASE_DIR / 'chats.json')
+WORKERS_FLAG = str(BASE_DIR / 'workers_started.flag')
 
 _workers_started = False
 _workers_lock_handle = None
@@ -256,26 +261,39 @@ def start_workers_route():
     started = start_saved_chat_workers()
     return jsonify({'started': started})
 
-@app.route('/resources/<path:filename>')
-def resources_files(filename):
-    full_path = safe_join(script_dir, 'resources', filename)
-    if not os.path.isfile(full_path):
-        abort(404)
-    return send_from_directory(os.path.join(script_dir, 'resources'), filename)
-
-@app.route('/fonts/<path:filename>')
-def fonts_files(filename):
-    full_path = safe_join(script_dir, 'fonts', filename)
-    if not os.path.isfile(full_path):
-        abort(404)
-    return send_from_directory(os.path.join(script_dir, 'fonts'), filename)
-
 @app.route('/downloads/<path:filename>')
 def downloads_files(filename):
-    full_path = safe_join(script_dir, 'downloads', filename)
+    full_path = safe_join(str(DOWNLOADS_DIR), filename)
     if not os.path.isfile(full_path):
         abort(404)
-    return send_from_directory(os.path.join(script_dir, 'downloads'), filename)
+    return send_from_directory(str(DOWNLOADS_DIR), filename)
+
+
+# Backward-compatible static routes (old URLs before static/ + templates/ layout).
+@app.route('/chat.css')
+def legacy_chat_css():
+    return send_from_directory(str(STATIC_DIR), 'chat.css')
+
+
+@app.route('/chat.js')
+def legacy_chat_js():
+    return send_from_directory(str(STATIC_DIR), 'chat.js')
+
+
+@app.route('/resources/<path:filename>')
+def legacy_resources_files(filename):
+    full_path = safe_join(str(STATIC_DIR / 'resources'), filename)
+    if not os.path.isfile(full_path):
+        abort(404)
+    return send_from_directory(str(STATIC_DIR / 'resources'), filename)
+
+
+@app.route('/fonts/<path:filename>')
+def legacy_fonts_files(filename):
+    full_path = safe_join(str(STATIC_DIR / 'fonts'), filename)
+    if not os.path.isfile(full_path):
+        abort(404)
+    return send_from_directory(str(STATIC_DIR / 'fonts'), filename)
 def get_db(chat_id):
     db_path = get_db_path(chat_id)
     if not os.path.exists(db_path):
@@ -732,19 +750,21 @@ def execute_sql():
         conn.close()
 
 
-if __name__ == '__main__':
+def main() -> None:
     import platform
 
     host = os.environ.get('HOST', '127.0.0.1')
     port = int(os.environ.get('PORT', '8000'))
 
-    # 开发环境或兼容性运行
     system = platform.system()
     if system == 'Windows':
         from waitress import serve
         logger.info(f"Running on http://{host}:{port} (Windows via waitress)")
         serve(app, host=host, port=port)
     else:
-        # Linux 开发环境（非生产）
         logger.info(f"Running on http://{host}:{port} (Linux dev mode)")
         app.run(host=host, port=port)
+
+
+if __name__ == "__main__":
+    main()

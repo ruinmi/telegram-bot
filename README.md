@@ -12,13 +12,11 @@ This project exports Telegram chats using the [`tdl`](https://github.com/iyear/t
 - Searchable HTML viewer with inline media display and link previews.
 
 ## Important Files
-- `update_messages.py` – run `tdl` to export messages and files.
-- `main.py` – coordinates export, parses JSON and saves messages to the database.
-- `server.py` – Flask server providing the management interface and chat pages.
-- `db_utils.py` – SQLite helper utilities.
-- `message_utils.py` – message parsing helpers.
-- `og_utils.py` – fetch Open Graph metadata for links.
-- Frontend assets: `chat.js`, `chat.css`, `index.html`, `template.html`.
+- Backend source code lives under `src/telegram_bot/`.
+- `src/telegram_bot/update_messages.py` – run `tdl` to export messages and files.
+- `src/telegram_bot/archiver.py` – coordinates export, parses JSON and saves messages to the database.
+- `src/telegram_bot/web_server.py` – Flask server providing the management interface and chat pages.
+- Frontend: `templates/` + `static/`.
 - Example startup scripts: `run.sh` / `run.bat` and `telegrambot.service`.
 
 ## Quick Start
@@ -33,7 +31,7 @@ This project exports Telegram chats using the [`tdl`](https://github.com/iyear/t
    ```
 4. Start the server:
    ```bash
-   BOT_PASSWORD=yourpassword python server.py
+   BOT_PASSWORD=yourpassword PYTHONPATH=src python -m telegram_bot
    ```
    The server listens on `127.0.0.1:8000` and uses basic authentication. Visit `http://localhost:8000/` to add a chat and start its worker. Open `/chat/<chat_id>` to browse messages.
 
@@ -56,13 +54,11 @@ This project exports Telegram chats using the [`tdl`](https://github.com/iyear/t
 - 所有数据存放在 `data/` 与 `downloads/` 目录下。
 
 ## 重要文件
-- `update_messages.py`：封装 `tdl` 导出聊天和附件。
-- `main.py`：协调导出、解析 JSON 并写入数据库。
-- `server.py`：Flask 服务器，提供管理界面及聊天页面。
-- `db_utils.py`：SQLite 操作辅助函数。
-- `message_utils.py`：消息解析工具。
-- `og_utils.py`：抓取链接的 Open Graph 数据。
-- 前端资源：`chat.js`、`chat.css`、`index.html`、`template.html`。
+- 后端源码在 `src/telegram_bot/` 下。
+- `src/telegram_bot/update_messages.py`：封装 `tdl` 导出聊天和附件。
+- `src/telegram_bot/archiver.py`：协调导出、解析 JSON 并写入数据库。
+- `src/telegram_bot/web_server.py`：Flask 服务器，提供管理界面及聊天页面。
+- 前端资源：`templates/`、`static/`。
 - 启动脚本示例：`run.sh`、`run.bat`、`telegrambot.service`。
 
 ## 快速开始
@@ -77,7 +73,7 @@ This project exports Telegram chats using the [`tdl`](https://github.com/iyear/t
    ```
 4. 启动服务器：
    ```bash
-   BOT_PASSWORD=你的密码 python server.py
+   BOT_PASSWORD=你的密码 PYTHONPATH=src python -m telegram_bot
    ```
    服务器默认在 `127.0.0.1:8000` 监听，并启用基本认证。访问 `http://localhost:8000/` 添加聊天后启动后台线程，再在 `/chat/<chat_id>` 查看聊天记录。
 
