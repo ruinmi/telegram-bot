@@ -15,7 +15,7 @@ import time
 from threading import Thread, Event, Lock
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, render_template, Response, abort
-from werkzeug.utils import safe_join
+from werkzeug.security import safe_join
 
 from .archiver import handle
 from .update_messages import redownload_chat_files
@@ -30,6 +30,7 @@ app = Flask(
 
 # 配置日志
 logger = get_logger('server')
+
 CHATS_FILE = str(BASE_DIR / 'chats.json')
 WORKERS_FLAG = str(BASE_DIR / 'workers_started.flag')
 
@@ -276,7 +277,7 @@ def start_workers_route():
 @app.route('/downloads/<path:filename>')
 def downloads_files(filename):
     full_path = safe_join(str(DOWNLOADS_DIR), filename)
-    if not os.path.isfile(full_path):
+    if full_path is None or not os.path.isfile(full_path):
         abort(404)
     return send_from_directory(str(DOWNLOADS_DIR), filename)
 
@@ -295,7 +296,7 @@ def legacy_chat_js():
 @app.route('/resources/<path:filename>')
 def legacy_resources_files(filename):
     full_path = safe_join(str(STATIC_DIR / 'resources'), filename)
-    if not os.path.isfile(full_path):
+    if full_path is None or not os.path.isfile(full_path):
         abort(404)
     return send_from_directory(str(STATIC_DIR / 'resources'), filename)
 
@@ -303,7 +304,7 @@ def legacy_resources_files(filename):
 @app.route('/fonts/<path:filename>')
 def legacy_fonts_files(filename):
     full_path = safe_join(str(STATIC_DIR / 'fonts'), filename)
-    if not os.path.isfile(full_path):
+    if full_path is None or not os.path.isfile(full_path):
         abort(404)
     return send_from_directory(str(STATIC_DIR / 'fonts'), filename)
 def get_db(chat_id):
@@ -389,7 +390,10 @@ def list_chats():
 def add_chat():
     data = request.get_json(force=True)
     chat_id = str(data.get('chat_id', '')).strip()
-    chat_id, remark = find_chat(chat_id)
+    result = find_chat(chat_id)
+    if result is None:
+        return jsonify({'error': 'Invalid chat_id'}), 400
+    chat_id, remark = result
     if data.get('remark', ''):
         remark = data.get('remark')
     download_files = bool(data.get('download_files', True))
@@ -716,10 +720,8 @@ def delete_chat():
     chats = [c for c in chats if str(c.get('id')) != chat_id]
     save_chats(chats)
 
-    data_dir = os.path.join(script_dir, 'data')
-    downloads_dir = os.path.join(script_dir, 'downloads')
-    removed_data = _safe_remove_tree(data_dir, chat_id)
-    removed_downloads = _safe_remove_tree(downloads_dir, chat_id)
+    removed_data = _safe_remove_tree('data', chat_id)
+    removed_downloads = _safe_remove_tree('downloads', chat_id)
 
     deleted = len(chats) != before
     return jsonify({

@@ -288,6 +288,7 @@ body {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 7;
+    line-clamp: 7;
 }
 
 .reply-info {
@@ -346,6 +347,7 @@ body {
     display: -webkit-box;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 1;
+    line-clamp: 1;
     padding-left: 3px;
 }
 
