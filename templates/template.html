@@ -2,10 +2,10 @@
 
 <head>
     <meta charset="utf-8">
-    <link rel="icon" href="{{ url_for('static', filename='resources/favicon.svg') }}" type="image/svg+xml">
+    <link rel="icon" href="/static/resources/favicon.svg" type="image/svg+xml">
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
     <title>聊天记录</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='chat.css') }}">
+    <link rel="stylesheet" href="/static/chat.css">
 </head>
 
 <body>
@@ -26,7 +26,7 @@
     <button id="scrollTop" class="scroll-button" onclick="window.scrollTo(0, 0)">⬆️</button>
     <button id="scrollBottom" class="scroll-button" onclick="window.scrollTo(0, document.body.scrollHeight)">⬇️</button>
     <script>window.CHAT_ID = "{{ chat_id }}";</script>
-    <script src="{{ url_for('static', filename='chat.js') }}"></script>
+    <script src="/static/chat.js"></script>
 </body>
 
 </html>

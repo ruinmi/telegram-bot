@@ -3,7 +3,7 @@
 
 <head>
   <meta charset="utf-8" />
-  <link rel="icon" href="{{ url_for('static', filename='resources/favicon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="/static/resources/favicon.svg" type="image/svg+xml">
   <title>聊天频道管理</title>
   <style>
     :root {
@@ -523,7 +523,7 @@
         <h1>聊天频道管理</h1>
         <p class="subtitle">快速添加聊天频道、调整导出选项，并在同一处查看配置或执行 SQL 调试。</p>
       </div>
-      <button id="startWorkers" type="button">启动 Workers</button>
+      <button id="startWorkers" type="button">开始监听</button>
     </header>
 
     <section class="surface">
@@ -870,10 +870,10 @@
           const btn = document.getElementById('startWorkers');
           if (data.started) {
             btn.disabled = true;
-            btn.textContent = 'Workers 已启动';
+            btn.textContent = '监听中';
           } else {
             btn.disabled = false;
-            btn.textContent = '启动 Workers';
+            btn.textContent = '开始监听';
           }
         });
     }

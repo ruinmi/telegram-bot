@@ -1,6 +1,6 @@
-flask
-gunicorn; platform_system != "Windows"
-waitress; platform_system == "Windows"
+fastapi
+uvicorn
+jinja2
 requests
 beautifulsoup4
 pillow
