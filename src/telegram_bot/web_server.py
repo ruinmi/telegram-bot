@@ -3,19 +3,23 @@ import json
 import subprocess
 import atexit
 import shutil
+import random
+import re
+import uuid
 
 from .project_logger import get_logger
 from .db_utils import get_connection, get_db_path
 from .paths import BASE_DIR, DOWNLOADS_DIR, STATIC_DIR, TEMPLATES_DIR, ensure_runtime_dirs
 import sqlite3
 import time
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from functools import wraps
 from flask import Flask, request, jsonify, send_from_directory, render_template, Response, abort
 from werkzeug.utils import safe_join
 
 from .archiver import handle
 from .update_messages import redownload_chat_files
+from bdpan import BaiduPanClient, BaiduPanConfig
 
 ensure_runtime_dirs()
 app = Flask(
@@ -32,6 +36,14 @@ WORKERS_FLAG = str(BASE_DIR / 'workers_started.flag')
 _workers_started = False
 _workers_lock_handle = None
 _chat_worker_stop_events = {}
+
+_cleanup_baidu_jobs = {}
+_cleanup_baidu_jobs_lock = Lock()
+_cleanup_baidu_global_lock = Lock()
+
+_CLEANUP_BAIDU_MIN_INTERVAL_SECONDS = 1.6
+_CLEANUP_BAIDU_JITTER_SECONDS = 0.4
+_CLEANUP_BAIDU_PROGRESS_FLUSH_EVERY = 25
 
 def workers_started():
     if _workers_started:
@@ -434,6 +446,239 @@ def redownload_chat():
 
     Thread(target=worker, daemon=True).start()
     return jsonify({'message': 'redownload started'})
+
+
+def _cleanup_baidu_extract_links(text: str) -> list[str]:
+    if not text:
+        return []
+    return re.findall(r'(https?://\S+)', text)
+
+
+def _cleanup_baidu_job_snapshot(chat_id: str) -> dict:
+    with _cleanup_baidu_jobs_lock:
+        job = _cleanup_baidu_jobs.get(chat_id)
+        return dict(job) if isinstance(job, dict) else {}
+
+
+def _cleanup_stale_baidu_links_worker(chat_id: str, remark: str | None, job_id: str, job: dict) -> None:
+    logger.info(f'Cleanup stale baidu links worker start: chat_id={chat_id} remark={remark} job_id={job_id}')
+
+    db_path = get_db_path(chat_id)
+    if not os.path.exists(db_path):
+        with _cleanup_baidu_jobs_lock:
+            job['status'] = 'error'
+            job['finished_at'] = int(time.time())
+            job['last_error'] = 'database not found'
+        logger.error(f'Cleanup worker aborted (db missing): chat_id={chat_id} path={db_path}')
+        return
+
+    bdpan = BaiduPanClient(config=BaiduPanConfig(cookie_file='auth/cookies.txt'))
+    stale_cache: dict[str, bool] = {}
+    last_call_monotonic = 0.0
+
+    scanned_messages = 0
+    candidate_messages = 0
+    deleted_messages = 0
+    checked_links = 0
+    errors = 0
+
+    def is_link_stale_cached(link: str) -> bool | None:
+        nonlocal last_call_monotonic, checked_links, errors
+        if link in stale_cache:
+            return stale_cache[link]
+
+        now = time.monotonic()
+        wait_seconds = _CLEANUP_BAIDU_MIN_INTERVAL_SECONDS - (now - last_call_monotonic)
+        if wait_seconds > 0:
+            time.sleep(wait_seconds + random.uniform(0, _CLEANUP_BAIDU_JITTER_SECONDS))
+        last_call_monotonic = time.monotonic()
+
+        try:
+            checked_links += 1
+            stale = bool(bdpan.is_link_stale(link))
+            stale_cache[link] = stale
+            return stale
+        except Exception as e:
+            errors += 1
+            with _cleanup_baidu_jobs_lock:
+                job['errors'] = errors
+                job['last_error'] = str(e)
+            logger.exception(f'Cleanup worker link check failed: chat_id={chat_id} link={link} error={e}')
+            return None
+
+    try:
+        conn = get_connection(chat_id)
+        cur = conn.cursor()
+        cur.execute(
+            '''
+            SELECT msg_id, msg
+            FROM messages
+            WHERE chat_id=? AND msg IS NOT NULL AND msg LIKE '%baidu.com%'
+            ORDER BY timestamp
+            ''',
+            (chat_id,),
+        )
+        rows = cur.fetchall()
+
+        delete_sql = 'DELETE FROM messages WHERE chat_id=? AND msg_id=?'
+        deletes_since_commit = 0
+        cur_delete = conn.cursor()
+
+        for msg_id, msg in rows:
+            scanned_messages += 1
+            msg_text = msg or ''
+            links = _cleanup_baidu_extract_links(msg_text)
+            if not links:
+                continue
+
+            should_keep = False
+            has_share_link = False
+            for link in links:
+                try:
+                    if bdpan.is_share_link(link):
+                        has_share_link = True
+                        stale = is_link_stale_cached(link)
+                        if stale is None:
+                            should_keep = True
+                            break
+                        if not stale:
+                            should_keep = True
+                            break
+                    else:
+                        should_keep = True
+                        break
+                except Exception as e:
+                    errors += 1
+                    should_keep = True
+                    with _cleanup_baidu_jobs_lock:
+                        job['errors'] = errors
+                        job['last_error'] = str(e)
+                    logger.exception(f'Cleanup worker parse failed: chat_id={chat_id} msg_id={msg_id} error={e}')
+                    break
+
+            if not has_share_link:
+                continue
+
+            candidate_messages += 1
+            if should_keep:
+                continue
+
+            try:
+                cur_delete.execute(delete_sql, (chat_id, int(msg_id)))
+                deleted_messages += 1
+                deletes_since_commit += 1
+                if deletes_since_commit >= 50:
+                    conn.commit()
+                    deletes_since_commit = 0
+            except Exception as e:
+                errors += 1
+                with _cleanup_baidu_jobs_lock:
+                    job['errors'] = errors
+                    job['last_error'] = str(e)
+                logger.exception(f'Cleanup worker delete failed: chat_id={chat_id} msg_id={msg_id} error={e}')
+
+            if scanned_messages % _CLEANUP_BAIDU_PROGRESS_FLUSH_EVERY == 0:
+                with _cleanup_baidu_jobs_lock:
+                    job['scanned_messages'] = scanned_messages
+                    job['candidate_messages'] = candidate_messages
+                    job['deleted_messages'] = deleted_messages
+                    job['checked_links'] = checked_links
+                    job['cached_links'] = len(stale_cache)
+                    job['errors'] = errors
+
+        conn.commit()
+        conn.close()
+
+        with _cleanup_baidu_jobs_lock:
+            job['status'] = 'done'
+            job['finished_at'] = int(time.time())
+            job['scanned_messages'] = scanned_messages
+            job['candidate_messages'] = candidate_messages
+            job['deleted_messages'] = deleted_messages
+            job['checked_links'] = checked_links
+            job['cached_links'] = len(stale_cache)
+            job['errors'] = errors
+
+        logger.info(
+            'Cleanup stale baidu links worker finished: '
+            f'chat_id={chat_id} job_id={job_id} scanned={scanned_messages} '
+            f'candidates={candidate_messages} deleted={deleted_messages} checked_links={checked_links} '
+            f'cache={len(stale_cache)} errors={errors}'
+        )
+    except Exception as e:
+        logger.exception(f'Cleanup worker crashed: chat_id={chat_id} job_id={job_id} error={e}')
+        with _cleanup_baidu_jobs_lock:
+            job['status'] = 'error'
+            job['finished_at'] = int(time.time())
+            job['last_error'] = str(e)
+            job['scanned_messages'] = scanned_messages
+            job['candidate_messages'] = candidate_messages
+            job['deleted_messages'] = deleted_messages
+            job['checked_links'] = checked_links
+            job['cached_links'] = len(stale_cache)
+            job['errors'] = errors + 1
+
+
+@app.route('/cleanup_stale_baidu_links', methods=['POST'])
+def cleanup_stale_baidu_links():
+    data = request.get_json(force=True)
+    chat_id = str(data.get('chat_id', '')).strip()
+    if not chat_id:
+        return jsonify({'error': 'chat_id required'}), 400
+
+    existing = _cleanup_baidu_job_snapshot(chat_id)
+    if existing and existing.get('status') == 'running':
+        return jsonify(existing), 409
+
+    if not _cleanup_baidu_global_lock.acquire(blocking=False):
+        return jsonify({'error': '已有清理任务正在运行，请稍后再试。'}), 409
+
+    chats = load_chats()
+    chat = next((c for c in chats if str(c.get('id')) == chat_id), None)
+    remark = chat.get('remark') if chat else None
+
+    job_id = f'{int(time.time())}_{uuid.uuid4().hex[:8]}'
+    job = {
+        'chat_id': chat_id,
+        'job_id': job_id,
+        'status': 'running',
+        'started_at': int(time.time()),
+        'finished_at': None,
+        'scanned_messages': 0,
+        'candidate_messages': 0,
+        'deleted_messages': 0,
+        'checked_links': 0,
+        'cached_links': 0,
+        'errors': 0,
+        'last_error': None,
+        'min_interval_seconds': _CLEANUP_BAIDU_MIN_INTERVAL_SECONDS,
+    }
+    with _cleanup_baidu_jobs_lock:
+        _cleanup_baidu_jobs[chat_id] = job
+
+    def worker():
+        try:
+            _cleanup_stale_baidu_links_worker(chat_id, remark, job_id, job)
+        finally:
+            try:
+                _cleanup_baidu_global_lock.release()
+            except RuntimeError:
+                pass
+
+    Thread(target=worker, daemon=True).start()
+    return jsonify(_cleanup_baidu_job_snapshot(chat_id))
+
+
+@app.route('/cleanup_stale_baidu_links_status/<chat_id>')
+def cleanup_stale_baidu_links_status(chat_id: str):
+    chat_id = str(chat_id or '').strip()
+    if not chat_id:
+        return jsonify({'error': 'chat_id required'}), 400
+
+    job = _cleanup_baidu_job_snapshot(chat_id)
+    if not job:
+        return jsonify({'chat_id': chat_id, 'status': 'idle'})
+    return jsonify(job)
 
 
 def _safe_remove_tree(base_dir: str, chat_id: str) -> bool:

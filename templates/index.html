@@ -349,6 +349,7 @@
       border: 1px solid rgba(248, 113, 113, 0.35);
       color: #fecaca;
       box-shadow: none;
+      margin-left: 8px;
     }
 
     .chat-actions button:hover:not(:disabled) {
@@ -625,6 +626,51 @@
     }
 
     let selectedChatId = null;
+    const cleanupPollers = new Map();
+
+    function stopCleanupPoll(chatId) {
+      const timer = cleanupPollers.get(chatId);
+      if (timer) {
+        clearInterval(timer);
+        cleanupPollers.delete(chatId);
+      }
+    }
+
+    function startCleanupPoll(chatId, jobId) {
+      stopCleanupPoll(chatId);
+      const poll = () => {
+        fetch('cleanup_stale_baidu_links_status/' + encodeURIComponent(chatId))
+          .then(r => r.json())
+          .then(data => {
+            if (!data || data.status === 'idle') return;
+            if (jobId && data.job_id && data.job_id !== jobId && data.status === 'running') return;
+
+            if (data.status === 'running') {
+              const scanned = data.scanned_messages ?? 0;
+              const deleted = data.deleted_messages ?? 0;
+              showToast(`清理中：已扫描 ${scanned} 条，已删除 ${deleted} 条…`);
+              return;
+            }
+
+            stopCleanupPoll(chatId);
+            if (data.status === 'done') {
+              const scanned = data.scanned_messages ?? 0;
+              const candidates = data.candidate_messages ?? 0;
+              const deleted = data.deleted_messages ?? 0;
+              showToast(`清理完成：扫描 ${scanned} 条，候选 ${candidates} 条，已删除 ${deleted} 条。`);
+              return;
+            }
+
+            if (data.status === 'error') {
+              showToast(`清理失败：${data.last_error || '未知错误'}`, 'error');
+            }
+          })
+          .catch(() => { });
+      };
+
+      poll();
+      cleanupPollers.set(chatId, setInterval(poll, 2500));
+    }
 
     function loadChats() {
       fetch('chats')
@@ -710,7 +756,45 @@
                 .catch(() => showToast('重新下载启动失败，请重试。', 'error'));
             });
 
+            const cleanupBtn = document.createElement('button');
+            cleanupBtn.type = 'button';
+            cleanupBtn.textContent = '删除失效链接消息';
+            cleanupBtn.addEventListener('click', (event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              const name = chat.remark || chat.id;
+              if (!confirm(`确认清理失效百度网盘链接：${name}？\n将遍历数据库中包含百度网盘分享链接的消息，若消息内所有链接都已失效则删除该消息。\n（后台执行，耗时取决于消息数量）`)) return;
+
+              cleanupBtn.disabled = true;
+              fetch('cleanup_stale_baidu_links', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: chat.id })
+              })
+                .then(async (r) => {
+                  const data = await r.json().catch(() => null);
+                  if (!r.ok) {
+                    const msg = (data && (data.error || data.last_error)) || '清理启动失败，请重试。';
+                    showToast(msg, 'error');
+                    if (r.status === 409 && data && data.status === 'running') {
+                      showToast('清理任务已在运行，正在获取进度…');
+                      startCleanupPoll(chat.id, data.job_id);
+                    }
+                    cleanupBtn.disabled = false;
+                    return;
+                  }
+                  showToast('已启动清理（后台执行）。');
+                  startCleanupPoll(chat.id, data && data.job_id);
+                  cleanupBtn.disabled = false;
+                })
+                .catch(() => {
+                  showToast('清理启动失败，请重试。', 'error');
+                  cleanupBtn.disabled = false;
+                });
+            });
+
             actions.appendChild(redownloadBtn);
+            actions.appendChild(cleanupBtn);
             actions.appendChild(delBtn);
             li.appendChild(actions);
             ul.appendChild(li);
