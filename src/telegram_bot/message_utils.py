@@ -6,6 +6,7 @@ from typing import List, Dict, Any
 from bdpan import BaiduPanClient, BaiduPanConfig
 import re
 
+from .xunlei_cipher import is_xunlei_link_stale
 from .http_client import post as http_post
 
 def load_json(file_path: str) -> dict:
@@ -47,6 +48,28 @@ def is_quark_link_stale(link: str) -> bool:
             return True
     except Exception as e:
         print(f"Error checking quark link: {e}")
+    return False
+
+def is_ali_link_stale(link: str) -> bool:
+    """Check if an Ali link is stale."""
+    share_id = link.split('/s/')[1].split('?')[0]
+    
+    url = f'https://api.aliyundrive.com/adrive/v3/share_link/get_share_by_anonymous?share_id={share_id}'
+    request_payload = {
+        'share_id': share_id,
+    }
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36',
+        'Referer': 'https://www.alipan.com/',
+        'Content-Type': 'application/json'
+    }
+    resp = http_post(url, headers=headers, json=request_payload)
+    try:
+        data = resp.json()
+        if 'share_name' not in data:
+            return True
+    except Exception as e:
+        print(f"Error checking ali link: {e}")
     return False
 
 def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | None = None) -> List[Dict[str, Any]]:
@@ -144,6 +167,18 @@ def filter_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     filtered_messages.append(msg)
                     break
             
+            # filter stale ali links
+            elif link.startswith('https://www.alipan.com'):
+                if not is_ali_link_stale(link):
+                    filtered_messages.append(msg)
+                    break
+            
+            # filter stale xunlei links
+            elif link.startswith('https://pan.xunlei.com'):
+                if not is_xunlei_link_stale(link):
+                    filtered_messages.append(msg)
+                    break
+            
             else:
                 filtered_messages.append(msg)
                 break
@@ -153,8 +188,4 @@ def filter_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             filtered_messages.append(msg)
             
     return filtered_messages
-
-if __name__ == "__main__":
-    # Example usage
-    stale = is_quark_link_stale('https://pan.quark.cn/s/3e6b5d159884#/list/share')
-    print(f'Is the Quark link stale? {stale}')
+    
