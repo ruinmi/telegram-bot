@@ -8,13 +8,14 @@ from hashlib import md5
 from pathlib import Path
 from urllib.parse import urlparse
 
-import requests
+import httpx
 from bs4 import BeautifulSoup, Tag
 from PIL import Image
 
-from .project_logger import get_logger
-from .update_messages import download
-from .paths import BASE_DIR, DATA_DIR, ensure_runtime_dirs
+from telegram_bot.http_client import get as http_get
+from telegram_bot.project_logger import get_logger
+from telegram_bot.update_messages import download
+from telegram_bot.paths import BASE_DIR, DATA_DIR, ensure_runtime_dirs
 
 ensure_runtime_dirs()
 OG_DATA_FILE = DATA_DIR / "og_data.json"
@@ -62,7 +63,7 @@ def get_open_graph_info(url: str, chat_id: str | None = None) -> dict | None:
         headers = {
             'User-Agent': r"Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/41.0.2272.96 Mobile Safari/537.36 TelegramBot (like TwitterBot)"
         }
-        response = requests.get(url, timeout=5, headers=headers)
+        response = http_get(url, timeout=5, headers=headers)
         if response.status_code != 200:
             og_data[url] = {}
             save_og_data(og_data)
@@ -101,16 +102,17 @@ def get_open_graph_info(url: str, chat_id: str | None = None) -> dict | None:
         og_width = soup.find('meta', property='og:image:width') or soup.find('meta', property='og:width')
         og_height = soup.find('meta', property='og:image:height') or soup.find('meta', property='og:height')
         og_url = soup.find('meta', property='og:url')
-        if og_image and isinstance(og_image, Tag):
-            content = og_image.get('content', '')
-            if isinstance(content, str) and content.startswith('//'):
-                img_url = f'{parsed_url.scheme}:{og_image["content"]}'
-            path = download(img_url, chat_id) if chat_id else None
-            if path and os.path.exists(path):
-                try:
-                    og_image['content'] = Path(path).resolve().relative_to(BASE_DIR).as_posix()
-                except Exception:
-                    og_image['content'] = path
+        # if og_image and isinstance(og_image, Tag):
+            # content = og_image.get('content', '')
+            # img_url = content
+            # if isinstance(content, str) and content.startswith('//'):
+                # img_url = f'{parsed_url.scheme}:{content}'
+            # path = download(img_url, chat_id) if chat_id else None
+            # if path and os.path.exists(path):
+            #     try:
+            #         og_image['content'] = Path(path).resolve().relative_to(BASE_DIR).as_posix()
+            #     except Exception:
+            #         og_image['content'] = path
 
         og_info = {
             'title': og_title['content'] if isinstance(og_title, Tag) and 'content' in og_title.attrs else None,
@@ -124,9 +126,10 @@ def get_open_graph_info(url: str, chat_id: str | None = None) -> dict | None:
         og_data[url] = og_info
         save_og_data(og_data)
         return og_info
-    except requests.RequestException as e:
+    except httpx.HTTPError as e:
         logger = get_logger()
         logger.exception(f'error og:{e}')
         og_data[url] = {}
         save_og_data(og_data)
         return None
+

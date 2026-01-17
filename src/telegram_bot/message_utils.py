@@ -6,7 +6,7 @@ from typing import List, Dict, Any
 from bdpan import BaiduPanClient, BaiduPanConfig
 import re
 
-import requests
+from .http_client import post as http_post
 
 def load_json(file_path: str) -> dict:
     """Load JSON data from a file."""
@@ -40,7 +40,7 @@ def is_quark_link_stale(link: str) -> bool:
         'Referer': 'https://pan.quark.cn/',
         'Content-Type': 'application/json'
     }
-    resp = requests.post(url, params=params, json=request_payload, headers=headers)
+    resp = http_post(url, params=params, json=request_payload, headers=headers)
     try:
         data = resp.json()
         if int(data.get('code', 0)) == 41011 or int(data.get('code', 0)) == 41012:

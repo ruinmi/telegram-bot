@@ -4,10 +4,10 @@ from .project_logger import get_logger
 import time
 import json
 import uuid
-import requests
 import urllib.parse
 import threading
 from .db_utils import get_last_export_time, set_exported_time
+from .http_client import download_file
 from .paths import BASE_DIR, ensure_runtime_dirs
 
 tdl_lock = threading.Lock()
@@ -142,10 +142,7 @@ def download(url, their_id, remark=None):
     full_save_path = os.path.join(download_path, unique_name)
 
     try:
-        response = requests.get(url, timeout=30)
-        response.raise_for_status()
-        with open(full_save_path, 'wb') as f:
-            f.write(response.content)
+        download_file(url, full_save_path, timeout=30)
         return full_save_path
     except Exception as e:
         logger.exception(f"下载失败: {e}")

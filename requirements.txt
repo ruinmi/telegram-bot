@@ -1,7 +1,8 @@
 fastapi
 uvicorn
 jinja2
-requests
 beautifulsoup4
 pillow
 bdpan
+httpx
+tenacity
