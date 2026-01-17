@@ -279,7 +279,6 @@ def is_xunlei_link_stale(link: str) -> bool:
     }
     resp = http_get(url, params=params, headers=headers)
     data = resp.json()
-    print(data)
     if data.get('share_status') != 'PASS_CODE_EMPTY':
         return True
     return False

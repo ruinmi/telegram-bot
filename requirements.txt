@@ -6,4 +6,4 @@ pillow
 bdpan
 httpx
 tenacity
-execjs
+PyExecJS

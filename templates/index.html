@@ -655,7 +655,7 @@
     function startCleanupPoll(chatId, jobId) {
       stopCleanupPoll(chatId);
       const poll = () => {
-        fetch('cleanup_stale_baidu_links_status/' + encodeURIComponent(chatId))
+        fetch('cleanup_stale_links_status/' + encodeURIComponent(chatId))
           .then(r => r.json())
           .then(data => {
             if (!data || data.status === 'idle') {
@@ -786,7 +786,7 @@
             cleanupBtn.dataset.mode = 'start';
             cleanupButtons.set(chat.id, cleanupBtn);
 
-            fetch('cleanup_stale_baidu_links_status/' + encodeURIComponent(chat.id))
+            fetch('cleanup_stale_links_status/' + encodeURIComponent(chat.id))
               .then(r => r.json())
               .then(status => {
                 if (status && status.status === 'running') {
@@ -807,10 +807,10 @@
                 startCleanupPoll(chat.id, null);
                 return;
               }
-              if (!confirm(`确认清理失效百度网盘链接：${name}？\n将遍历数据库中包含百度网盘分享链接的消息，若消息内所有链接都已失效则删除该消息。\n（后台执行，耗时取决于消息数量）`)) return;
+              if (!confirm(`确认清理失效网盘链接（百度/夸克/阿里/迅雷）：${name}？\n将遍历数据库中包含网盘分享链接的消息，若消息内所有网盘链接都已失效且不包含其他链接则删除该消息。\n（后台执行，耗时取决于消息数量）`)) return;
 
               cleanupBtn.disabled = true;
-              fetch('cleanup_stale_baidu_links', {
+              fetch('cleanup_stale_links', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ chat_id: chat.id })
