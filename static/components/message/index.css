@@ -1,0 +1,53 @@
+.message {
+    max-width: min(600px, 60vw);
+    margin: 2px;
+    clear: both;
+    word-wrap: break-word;
+    position: relative;
+    min-width: 8.35rem;
+    color: white;
+    text-align: left;
+}
+
+.message.left {
+    float: left;
+}
+
+.message.right .msg a {
+    color: #fff;
+}
+
+.message.left.context {
+    color: #9b9b9b;
+}
+
+.message.right.context {
+    color: #9b9b9b;
+}
+
+.message-frame {
+    border-radius: .9375rem;
+    overflow: hidden;
+}
+
+.message-frame.left {
+    background-color: #212121;
+}
+.message-frame.right {
+    background-color: rgb(118, 106, 200);
+}
+.message-frame.left.context {
+    background-color: #21212199;
+}
+.message-frame.right.context {
+    background-color: rgb(118, 106, 200, 0.6);
+}
+
+@media screen and (max-width: 768px) {
+    .message {
+        max-width: 80%;
+    }
+    .message-frame {
+        border-radius: 1rem;
+    }
+}
