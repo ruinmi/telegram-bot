@@ -462,7 +462,7 @@ def _cleanup_stale_links_worker(
         deletes_since_commit = 0
         cur_delete = conn.cursor()
 
-        logger.info(f"Cleanup worker started: chat_id={chat_id} total_messages={len(rows)}")
+        logger.debug(f"Cleanup worker started: chat_id={chat_id} total_messages={len(rows)}")
         for msg_id, msg in rows:
             scanned_messages += 1
             msg_text = msg or ""
@@ -478,15 +478,15 @@ def _cleanup_stale_links_worker(
             for link in links:
                 try:
                     provider = _cleanup_link_provider(link, providers_set, bdpan=bdpan)
-                    logger.info(f"Cleanup worker link provider: chat_id={chat_id} msg_id={msg_id} link={link} provider={provider}")
+                    logger.debug(f"Cleanup worker link provider: chat_id={chat_id} msg_id={msg_id} link={link} provider={provider}")
                     if provider is None:
-                        logger.info(f"Cleanup worker link unsupported: chat_id={chat_id} msg_id={msg_id} link={link}")
+                        logger.debug(f"Cleanup worker link unsupported: chat_id={chat_id} msg_id={msg_id} link={link}")
                         continue
 
                     has_share_link = True
                     has_supported_share_link = True
                     stale = is_link_stale_cached(provider, link)
-                    logger.info(f"Cleanup worker link stale check: chat_id={chat_id} msg_id={msg_id} link={link} provider={provider} stale={stale}")
+                    logger.debug(f"Cleanup worker link stale check: chat_id={chat_id} msg_id={msg_id} link={link} provider={provider} stale={stale}")
                     if stale is None:
                         is_stale = False
                     if not stale:
@@ -526,19 +526,19 @@ def _cleanup_stale_links_worker(
                     job["checked_links_by_provider"] = dict(checked_links_by_provider)
                     
             if should_keep:
-                logger.info(f"Cleanup worker keep message: chat_id={chat_id} msg_id={msg_id}")
+                logger.debug(f"Cleanup worker keep message: chat_id={chat_id} msg_id={msg_id}")
                 continue
 
             try:
                 cur_delete.execute(delete_sql, (chat_id, int(msg_id)))
                 deleted_messages += 1
                 deletes_since_commit += 1
-                logger.info(f"Cleanup worker deleted message: chat_id={chat_id} msg_id={msg_id}")
-                if deletes_since_commit >= 5:
-                    logger.info(f"Cleanup worker committing deletes: chat_id={chat_id}")
+                logger.warning(f"Cleanup worker deleted message: chat_id={chat_id} msg_id={msg_id}")
+                if deletes_since_commit >= 10:
+                    logger.debug(f"Cleanup worker committing deletes: chat_id={chat_id}")
                     conn.commit()
                     with open("_last_cleanup.txt", "w", encoding="utf-8") as f:
-                        f.write(str(omit_num + scanned_messages))
+                        f.write(str(omit_num + scanned_messages - deleted_messages))
                     deletes_since_commit = 0
             except Exception as e:
                 errors += 1
@@ -547,7 +547,7 @@ def _cleanup_stale_links_worker(
                     job["last_error"] = str(e)
                 logger.exception(f"Cleanup worker delete failed: chat_id={chat_id} msg_id={msg_id} error={e}")
 
-            logger.info(f"Cleanup worker progress: chat_id={chat_id} scanned={scanned_messages} "
+            logger.debug(f"Cleanup worker progress: chat_id={chat_id} scanned={scanned_messages} "
                         f"candidates={candidate_messages} deleted={deleted_messages} checked_links={checked_links} "
                         f"cache={len(stale_cache)} errors={errors}")
 
