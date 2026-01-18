@@ -13,6 +13,10 @@
     float: left;
 }
 
+.message.right {
+    float: right;
+}
+
 .message.right .msg a {
     color: #fff;
 }
@@ -37,10 +41,10 @@
     background-color: rgb(118, 106, 200);
 }
 .message-frame.left.context {
-    background-color: #21212199;
+    background-color: #ffffff33;
 }
 .message-frame.right.context {
-    background-color: rgb(118, 106, 200, 0.6);
+    background-color: rgb(118 106 200 / 34%);
 }
 
 @media screen and (max-width: 768px) {

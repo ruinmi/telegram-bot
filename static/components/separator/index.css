@@ -1,19 +1,25 @@
 .separator {
     clear: both;
-    width: 150px;
     text-align: center;
     cursor: pointer;
     padding: 10px;
     margin: 0 auto;
+    border-bottom: 1px solid;
     border-radius: 15px;
+    transition: all 0.2s;
 }
 
 .separator.down {
     margin-bottom: 70px;
+    background: #766ac891;
 }
 
 .separator:hover {
     background-color: rgba(255, 255, 255, 0.1);
+}
+
+.separator.down:hover {
+    background-color: #766ac83d;
 }
 
 .separator span {

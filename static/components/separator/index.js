@@ -1,3 +1,20 @@
+import { createMessageHtml } from '../message/index.js';
+import { htmlToElement } from '../../utils.js';
+
+const contextSize = 5
+const chatId = window.CHAT_ID;
+
+function fetchMessagesBetweenMsgIds(startMsgId, endMsgId, direction, limit) {
+    return fetch(
+        `../messages_between/${chatId}?start_msg_id=${startMsgId}&end_msg_id=${endMsgId}&direction=${encodeURIComponent(direction)}&limit=${limit}`
+    ).then(response => {
+        if (!response.ok) {
+            throw new Error('无法加载上下文消息');
+        }
+        return response.json();
+    });
+}
+
 // 创建可点击的分隔符元素，通过接口按需加载上下文消息（按 msg_id 取区间）
 export function createSeparatorElement(gapId, startMsgId, endMsgId, direction, searchValue) {
     let separator = document.createElement('div');
@@ -38,7 +55,7 @@ export function createSeparatorElement(gapId, startMsgId, endMsgId, direction, s
             for (const m of batch) {
                 const idx = (m.msg_id ?? Math.random());
                 let messageHtml = createMessageHtml(m, idx, searchValue);
-                messageHtml = messageHtml.replace('class="message', 'class="message context');
+                messageHtml = messageHtml.replace('class="message-frame', 'class="message-frame context');
                 const el = htmlToElement(messageHtml);
                 if (!el) continue;
                 if (!firstInserted) firstInserted = el;

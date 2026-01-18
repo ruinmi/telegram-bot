@@ -1,17 +1,6 @@
+import { resolveMediaUrl, applyImageFallback } from '../../utils.js';
+
 const DEFAULT_MAX_IMG_HEIGHT = window.innerHeight * 0.5;
-
-function resolveMediaUrl(url) {
-    const raw = (url || '').trim();
-    if (!raw) return '';
-    if (/^https?:\/\//i.test(raw)) return raw;
-
-    let cleaned = raw;
-    while (cleaned.startsWith('../')) cleaned = cleaned.slice(3);
-    if (cleaned.startsWith('./')) cleaned = cleaned.slice(2);
-
-    if (cleaned.startsWith('/')) return cleaned;
-    return `/${cleaned}`;
-}
 
 /**
  * 计算单张图片最大宽度(px)，基于「气泡」的内容区宽度

@@ -81,11 +81,13 @@ body {
     line-height: 1.4rem;
 }
 
+.reply-info a,
 .msg a {
     color: #8774e1;
     text-decoration: none;
 }
 
+.reply-info a:hover,
 .msg a:hover {
     text-decoration: underline;
 }
