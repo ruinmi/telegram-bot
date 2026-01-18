@@ -158,9 +158,9 @@ def start_saved_chat_workers() -> bool:
         return True
 
 
-def find_chat(info: str) -> tuple[str, str] | None:
+def find_chat(info: str) -> tuple[str, str, str] | None:
     """
-    根据 id（纯数字字符串）或 username（字符串），返回 (id, visibleName)
+    根据 id（纯数字字符串）或 username（字符串），返回 (id, visibleName, username)
     """
     info = str(info or "").strip()
     if not info:
@@ -168,7 +168,7 @@ def find_chat(info: str) -> tuple[str, str] | None:
 
     try:
         if info.isdigit():
-            filter_str = f"ID == '{info}'"
+            filter_str = f"ID == {info}"
         else:
             filter_str = f"Username == '{info}'"
 
@@ -180,7 +180,7 @@ def find_chat(info: str) -> tuple[str, str] | None:
             return None
 
         chat = chats[0]
-        return str(chat["id"]), chat.get("visible_name", "")
+        return str(chat["id"]), chat.get("visible_name", ""), chat.get("username", "")
     except subprocess.CalledProcessError as e:
         logger.error(f"命令执行错误: {e}")
         return None
@@ -665,7 +665,7 @@ def add_chat(payload: AddChatRequest):
     if result is None:
         return _json_error(400, "Invalid chat_id")
 
-    chat_id, remark = result
+    chat_id, remark, username = result
     if payload.remark:
         remark = payload.remark
 
@@ -681,6 +681,7 @@ def add_chat(payload: AddChatRequest):
         "download_images_only": download_images_only,
         "all_messages": bool(payload.all_messages),
         "raw_messages": bool(payload.raw_messages),
+        "username": username,
     }
 
     chats = load_chats()
