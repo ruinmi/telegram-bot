@@ -1,6 +1,7 @@
 import { resolveMediaUrl, applyImageFallback, isPhone } from '../../utils.js';
 
 const DEFAULT_MAX_IMG_HEIGHT = window.innerHeight * 0.5;
+const chatUsername = window.CHAT_USERNAME || '';
 
 /**
  * 计算单张图片最大宽度(px)，基于「气泡」的内容区宽度
@@ -313,6 +314,8 @@ export function createMessageHtml(message, index, searchValue) {
         hasImage = '';
     } 
 
+    const telegramUrl = chatUsername ? `https://t.me/${chatUsername}/${message.msg_id ?? ''}` : `https://t.me/c/${message.chat_id}/${message.msg_id ?? ''}`;
+
     // 6. 拼接整体
     return `
     <div class="message ${hasImage} ${position} clearfix" data-msg-id="${message.msg_id ?? ''}">
@@ -325,6 +328,9 @@ export function createMessageHtml(message, index, searchValue) {
         ${reactionsHtml}
         <div class="date ${position}">${message.date}</div>
       </div>
+      <div class="message-to-telegram ${position}">
+        <a href="${telegramUrl}" target="_blank"></a>
+        <span class="to-icon"></span>
+      </div>
     </div>`;
 }
-

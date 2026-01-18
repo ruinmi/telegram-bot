@@ -259,7 +259,6 @@ function hideTopLoader() {
 }
 
 
-
 // 渲染指定区间内的消息，prepend=true 时将消息插入到最前面
 function renderMessagesRange(start, end, prepend = false) {
     return new Promise((resolve) => {
@@ -599,7 +598,9 @@ function loadChatList() {
                 const opt = document.createElement('option');
                 opt.value = chat.id;
                 opt.textContent = chat.remark || chat.id;
-                if (chat.id === window.CHAT_ID) opt.selected = true;
+                if (chat.id === window.CHAT_ID) {
+                    opt.selected = true;
+                }
                 select.appendChild(opt);
             });
         });

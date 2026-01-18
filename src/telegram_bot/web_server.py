@@ -599,7 +599,9 @@ def index_page(request: Request):
 
 @app.get("/chat/{chat_id}")
 def chat_page(chat_id: str, request: Request):
-    return templates.TemplateResponse("template.html", {"request": request, "chat_id": chat_id})
+    chats = load_chats()
+    chat_username = next((c.get('username') for c in chats if c.get('id') == chat_id), '')
+    return templates.TemplateResponse("template.html", {"request": request, "chat_id": chat_id, 'chat_username': chat_username})
 
 
 @app.get("/workers_status")

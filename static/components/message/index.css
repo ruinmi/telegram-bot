@@ -9,6 +9,10 @@
     text-align: left;
 }
 
+.message:hover .message-to-telegram {
+    opacity: 1;
+}
+
 .message.left {
     float: left;
 }
@@ -68,6 +72,68 @@
 .img-tile img.img-broken {
     object-fit: contain;
     background: rgba(255, 255, 255, 0.08);
+}
+
+.message-to-telegram {
+    position: absolute;
+    bottom: 0;
+    border-radius: 50%;
+    background: #b92eff3d;
+    padding: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    opacity: 0;
+}
+
+.message-to-telegram.left {
+    right: -34px;
+}
+
+.message-to-telegram a {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+}
+
+.message-to-telegram.left .to-icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-image: url('data:image/svg+xml;base64,PHN2ZyB0PSIxNzY4NzQyMzgwNzI4IiBjbGFzcz0iaWNvbiIgdmlld0JveD0iMCAwIDEwMjQgMTAyNCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHAtaWQ9IjI0MTciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHBhdGggZD0iTTYyMS4yNTQgODc3LjI1NGwzMjAtMzIwYzI0Ljk5NC0yNC45OTIgMjQuOTk0LTY1LjUxNiAwLTkwLjUxbC0zMjAtMzIwYy0yNC45OTQtMjQuOTkyLTY1LjUxNi0yNC45OTItOTAuNTEgMC0yNC45OTQgMjQuOTk0LTI0Ljk5NCA2NS41MTYgMCA5MC41MUw3NDEuNDkgNDQ4IDEyOCA0NDhjLTM1LjM0NiAwLTY0IDI4LjY1NC02NCA2NHMyOC42NTQgNjQgNjQgNjRsNjEzLjQ5IDBMNTMwLjc0NCA3ODYuNzQ2QzUxOC4yNDggNzk5LjI0MiA1MTIgODE1LjYyMiA1MTIgODMyczYuMjQ4IDMyLjc1OCAxOC43NDQgNDUuMjU0QzU1NS43MzggOTAyLjI0OCA1OTYuMjYgOTAyLjI0OCA2MjEuMjU0IDg3Ny4yNTR6IiBmaWxsPSIjZTZlNmU2IiBwLWlkPSIyNDE4Ij48L3BhdGg+PC9zdmc+');
+}
+
+.message-to-telegram.right {
+    left: -34px;
+}
+
+.message-to-telegram.right .to-icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+    background-size: contain;
+    background-repeat: no-repeat;
+    background-image: url('data:image/svg+xml;base64,PHN2ZyB0PSIxNzY4NzQ0NTYwNjA4IiBjbGFzcz0iaWNvbiIgdmlld0JveD0iMCAwIDEwMjQgMTAyNCIgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHAtaWQ9IjE1MzEiIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiI+PHBhdGggZD0iTTQwMi43NDYgMTQ2Ljc0NmwtMzIwIDMyMGMtMjQuOTk0IDI0Ljk5Mi0yNC45OTQgNjUuNTE2IDAgOTAuNTA4bDMyMCAzMjBjMjQuOTk0IDI0Ljk5MiA2NS41MTYgMjQuOTkyIDkwLjUxIDAgMjQuOTk2LTI0Ljk5MiAyNC45OTYtNjUuNTE2IDAtOTAuNTA4TDI4Mi41MDggNTc2IDg5NiA1NzZjMzUuMzQ2IDAgNjQtMjguNjUyIDY0LTY0IDAtMzUuMzQ2LTI4LjY1NC02NC02NC02NEwyODIuNTA4IDQ0OGwyMTAuNzQ2LTIxMC43NDZDNTA1Ljc1IDIyNC43NTggNTEyIDIwOC4zNzggNTEyIDE5MnMtNi4yNDgtMzIuNzU4LTE4Ljc0NC00NS4yNTRDNDY4LjI2IDEyMS43NTIgNDI3Ljc0IDEyMS43NTIgNDAyLjc0NiAxNDYuNzQ2eiIgZmlsbD0iI2U2ZTZlNiIgcC1pZD0iMTUzMiI+PC9wYXRoPjwvc3ZnPg==');
+}
+
+.message-to-telegram:hover {
+    background: #7a04b696;
+}
+
+.clearfix::after {
+    content: "";
+    clear: both;
+    display: block;
+    width: 120vw;
+    position: absolute;
+    bottom: -.175rem;
+    top: -.0625rem;
+    left: 50%;
+    translate: -50%;
+    z-index: -1;
 }
 
 @media screen and (max-width: 768px) {

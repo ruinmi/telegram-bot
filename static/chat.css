@@ -19,6 +19,7 @@ body {
     justify-content: center;
     background-image: url('resources/bg.png');
     overscroll-behavior: contain;
+    overflow-x: hidden;
 }
 
 .container {
@@ -103,11 +104,6 @@ body {
     display: none !important;
 }
 
-.clearfix::after {
-    content: "";
-    clear: both;
-    display: table;
-}
 .scroll-button:hover {
     background-color: #111111;
 }
