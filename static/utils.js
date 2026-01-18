@@ -47,3 +47,14 @@ export function applyImageFallback(imgEl) {
     imgEl.classList.add('img-broken');
     imgEl.src = BROKEN_IMAGE_PLACEHOLDER;
 }
+
+export function isPhone() {
+  const userAgent = navigator.userAgent.toLowerCase();
+
+  // 判断是否为手机端
+  if (/mobile/i.test(userAgent)) {
+    return true;
+  }
+  return false;
+}
+

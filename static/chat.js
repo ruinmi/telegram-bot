@@ -618,7 +618,7 @@ function loadReactionEmoticons() {
     const reactionSelect = document.getElementById('reactionSelect');
     if (!reactionSelect) return;
 
-    reactionSelect.innerHTML = '<option value=\"\">按表情(Reaction)排序</option>';
+    reactionSelect.innerHTML = '<option value=\"\">按表情排序</option>';
     fetchReactionEmoticons()
         .then(data => {
             const items = Array.isArray(data.emoticons) ? data.emoticons : [];

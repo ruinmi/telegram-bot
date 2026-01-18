@@ -1,4 +1,4 @@
-import { resolveMediaUrl, applyImageFallback } from '../../utils.js';
+import { resolveMediaUrl, applyImageFallback, isPhone } from '../../utils.js';
 
 const DEFAULT_MAX_IMG_HEIGHT = window.innerHeight * 0.5;
 
@@ -7,17 +7,19 @@ const DEFAULT_MAX_IMG_HEIGHT = window.innerHeight * 0.5;
  */
 function calculateMaxImageWidth(containerEl, imagesPerRow = 3, gap = 6) {
     // 找到最近的气泡容器
-    const bubbleEl = containerEl.closest('.message');
+    const bubbleEl = containerEl.closest('.message-frame');
     const bubbleStyle = window.getComputedStyle(bubbleEl);
 
     // 气泡内容区真实可用宽度 = clientWidth – 内边距
     const bubbleInnerWidth = bubbleEl.clientWidth
         - parseFloat(bubbleStyle.paddingLeft)
         - parseFloat(bubbleStyle.paddingRight);
+    
+    const widthForCal = Math.max(bubbleInnerWidth, isPhone() ? 320 : 600);
 
     // 每张图可用宽度 = (可用宽 – 间距总和) / 张数
     return Math.floor(
-        (bubbleInnerWidth - gap * (imagesPerRow - 1))
+        (widthForCal - gap * (imagesPerRow - 1))
         / imagesPerRow
     );
 }
@@ -30,7 +32,9 @@ function calculateMaxImageWidth(containerEl, imagesPerRow = 3, gap = 6) {
 function renderImagesInBubble(containerEl, imageList, options = {}) {
     // 如果只有一张，默认一行一张
     const imagesPerRow = imageList.length === 1
-        ? 1
+        ? 1 :
+        imageList.length === 2
+            ? 2
         : (options.maxPerRow || 3);
 
     const gap = imageList.length === 1
