@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 import httpx
-from tenacity import RetryCallState, Retrying, retry_if_exception, stop_after_attempt, wait_exponential_jitter
+from tenacity import RetryCallState, RetryError, Retrying, retry_if_exception, stop_after_attempt, wait_exponential_jitter
 
 from .project_logger import get_logger
 
@@ -34,12 +34,13 @@ def _is_retryable_http_status(status_code: int) -> bool:
     return status_code == 429 or 500 <= status_code <= 599
 
 
-def _should_retry(exc: BaseException) -> bool:
+def _should_retry(retry_state: RetryCallState) -> bool:
+    exc = retry_state.outcome.exception() if retry_state.outcome else None
     if isinstance(exc, (httpx.TimeoutException, httpx.TransportError)):
         return True
-    if isinstance(exc, httpx.HTTPStatusError):
-        return _is_retryable_http_status(exc.response.status_code)
-    return False
+    
+    
+    return _is_retryable_http_status(retry_state.outcome.result().status_code) if retry_state.outcome else False
 
 
 def _log_before_sleep(retry_state: RetryCallState) -> None:
@@ -63,7 +64,6 @@ def request(
     content: bytes | str | None = None,
     timeout: httpx.Timeout | float | None = None,
     follow_redirects: bool = True,
-    raise_for_status: bool = False,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
 ) -> httpx.Response:
     def _do_request() -> httpx.Response:
@@ -79,14 +79,12 @@ def request(
             timeout=timeout,
             follow_redirects=follow_redirects,
         )
-        if raise_for_status:
-            resp.raise_for_status()
         return resp
 
     retrying = Retrying(
         stop=stop_after_attempt(max_attempts),
         wait=wait_exponential_jitter(initial=0.5, max=8.0),
-        retry=retry_if_exception(_should_retry),
+        retry=_should_retry,
         reraise=True,
         before_sleep=_log_before_sleep,
     )
@@ -100,19 +98,23 @@ def get(
     headers: Mapping[str, str] | None = None,
     timeout: httpx.Timeout | float | None = None,
     follow_redirects: bool = True,
-    raise_for_status: bool = False,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
 ) -> httpx.Response:
-    return request(
-        "GET",
-        url,
-        params=params,
-        headers=headers,
-        timeout=timeout,
-        follow_redirects=follow_redirects,
-        raise_for_status=raise_for_status,
-        max_attempts=max_attempts,
-    )
+    try:
+        response = request(
+            "GET",
+            url,
+            params=params,
+            headers=headers,
+            timeout=timeout,
+            follow_redirects=follow_redirects,
+            max_attempts=max_attempts,
+        )
+    except RetryError as e:
+        logger = get_logger()
+        logger.error(f"GET request to {url} failed after {max_attempts} attempts: {e}")
+        return e.last_attempt.result()
+    return response
 
 
 def post(
@@ -125,22 +127,26 @@ def post(
     content: bytes | str | None = None,
     timeout: httpx.Timeout | float | None = None,
     follow_redirects: bool = True,
-    raise_for_status: bool = False,
     max_attempts: int = DEFAULT_MAX_ATTEMPTS,
 ) -> httpx.Response:
-    return request(
-        "POST",
-        url,
-        params=params,
-        headers=headers,
-        json=json,
-        data=data,
-        content=content,
-        timeout=timeout,
-        follow_redirects=follow_redirects,
-        raise_for_status=raise_for_status,
-        max_attempts=max_attempts,
-    )
+    try:
+        response = request(
+            "POST",
+            url,
+            params=params,
+            headers=headers,
+            json=json,
+            data=data,
+            content=content,
+            timeout=timeout,
+            follow_redirects=follow_redirects,
+            max_attempts=max_attempts,
+        )
+    except RetryError as e:
+        logger = get_logger()
+        logger.error(f"POST request to {url} failed after {max_attempts} attempts: {e}")
+        return e.last_attempt.result()
+    return response
 
 
 def download_file(

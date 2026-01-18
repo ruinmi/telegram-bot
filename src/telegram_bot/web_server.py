@@ -472,22 +472,25 @@ def _cleanup_stale_links_worker(
 
             should_keep = False
             has_supported_share_link = False
-
+            
+            is_stale = True
+            has_share_link = False
             for link in links:
                 try:
                     provider = _cleanup_link_provider(link, providers_set, bdpan=bdpan)
+                    logger.info(f"Cleanup worker link provider: chat_id={chat_id} msg_id={msg_id} link={link} provider={provider}")
                     if provider is None:
-                        should_keep = True
-                        break
+                        logger.info(f"Cleanup worker link unsupported: chat_id={chat_id} msg_id={msg_id} link={link}")
+                        continue
 
+                    has_share_link = True
                     has_supported_share_link = True
                     stale = is_link_stale_cached(provider, link)
+                    logger.info(f"Cleanup worker link stale check: chat_id={chat_id} msg_id={msg_id} link={link} provider={provider} stale={stale}")
                     if stale is None:
-                        should_keep = True
-                        break
+                        is_stale = False
                     if not stale:
-                        should_keep = True
-                        break
+                        is_stale = False
                 except Exception as e:
                     errors += 1
                     should_keep = True
@@ -498,17 +501,41 @@ def _cleanup_stale_links_worker(
                     break
 
             if not has_supported_share_link:
+                logger.warning(
+                    f"Cleanup worker found no supported links: chat_id={chat_id} msg_id={msg_id} links={links}"
+                )
                 continue
 
             candidate_messages += 1
+            
+            if not should_keep:
+                if has_share_link:
+                    if not is_stale:
+                        should_keep = True
+                else:
+                    should_keep = True
+                    
+            if scanned_messages % _CLEANUP_LINKS_PROGRESS_FLUSH_EVERY == 0:
+                with _cleanup_links_jobs_lock:
+                    job["scanned_messages"] = scanned_messages
+                    job["candidate_messages"] = candidate_messages
+                    job["deleted_messages"] = deleted_messages
+                    job["checked_links"] = checked_links
+                    job["cached_links"] = len(stale_cache)
+                    job["errors"] = errors
+                    job["checked_links_by_provider"] = dict(checked_links_by_provider)
+                    
             if should_keep:
+                logger.info(f"Cleanup worker keep message: chat_id={chat_id} msg_id={msg_id}")
                 continue
 
             try:
                 cur_delete.execute(delete_sql, (chat_id, int(msg_id)))
                 deleted_messages += 1
                 deletes_since_commit += 1
+                logger.info(f"Cleanup worker deleted message: chat_id={chat_id} msg_id={msg_id}")
                 if deletes_since_commit >= 5:
+                    logger.info(f"Cleanup worker committing deletes: chat_id={chat_id}")
                     conn.commit()
                     with open("_last_cleanup.txt", "w", encoding="utf-8") as f:
                         f.write(str(omit_num + scanned_messages))
@@ -520,15 +547,9 @@ def _cleanup_stale_links_worker(
                     job["last_error"] = str(e)
                 logger.exception(f"Cleanup worker delete failed: chat_id={chat_id} msg_id={msg_id} error={e}")
 
-            if scanned_messages % _CLEANUP_LINKS_PROGRESS_FLUSH_EVERY == 0:
-                with _cleanup_links_jobs_lock:
-                    job["scanned_messages"] = scanned_messages
-                    job["candidate_messages"] = candidate_messages
-                    job["deleted_messages"] = deleted_messages
-                    job["checked_links"] = checked_links
-                    job["cached_links"] = len(stale_cache)
-                    job["errors"] = errors
-                    job["checked_links_by_provider"] = dict(checked_links_by_provider)
+            logger.info(f"Cleanup worker progress: chat_id={chat_id} scanned={scanned_messages} "
+                        f"candidates={candidate_messages} deleted={deleted_messages} checked_links={checked_links} "
+                        f"cache={len(stale_cache)} errors={errors}")
 
         conn.commit()
         conn.close()

@@ -7,3 +7,5 @@ bdpan
 httpx
 tenacity
 PyExecJS
+python-dotenv
+pytest

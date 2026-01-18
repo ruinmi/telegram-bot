@@ -154,38 +154,53 @@ def filter_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for msg in messages:
         msg_text = msg.get('text', '') or ''
         links = re.findall(r'(https?://\S+)', msg_text)
+        if not links:
+            filtered_messages.append(msg)
+            continue
+        
+        has_share_link = False
+        has_others_link = False
+        is_stale = True
+        
         for link in links:
             # filter stale pan baidu link messages
             if bdpan.is_share_link(link):
+                has_share_link = True
                 if not bdpan.is_link_stale(link):
-                    filtered_messages.append(msg)
+                    is_stale = False
                     break
                 
             # filter stale quark links
             elif link.startswith('https://pan.quark.cn'):
+                has_share_link = True
                 if not is_quark_link_stale(link):
-                    filtered_messages.append(msg)
+                    is_stale = False
                     break
             
             # filter stale ali links
             elif link.startswith('https://www.alipan.com'):
+                has_share_link = True
                 if not is_ali_link_stale(link):
-                    filtered_messages.append(msg)
+                    is_stale = False
                     break
             
             # filter stale xunlei links
             elif link.startswith('https://pan.xunlei.com'):
+                has_share_link = True
                 if not is_xunlei_link_stale(link):
-                    filtered_messages.append(msg)
+                    is_stale = False
                     break
             
             else:
+                has_others_link = True
+        
+        if has_share_link:
+            if not is_stale:
                 filtered_messages.append(msg)
-                break
-            
-        # If no links found, keep the message
-        if not links:
+        
+        elif has_others_link:
             filtered_messages.append(msg)
+                  
             
     return filtered_messages
     

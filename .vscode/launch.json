@@ -12,7 +12,8 @@
             "env": {
                 "PYTHONPATH": "${workspaceFolder}/src"
             },
-            "module": "telegram_bot.xunlei_cipher",
+            // "module": "telegram_bot.xunlei_cipher",
+            "module": "test.test_http_client",
             "console": "integratedTerminal",
             "justMyCode": false
         },
@@ -23,6 +24,21 @@
             "program": "${file}",
             "console": "integratedTerminal",
             "justMyCode": false
+        },
+        {
+            "name": "Python: pytest",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/.venv/Scripts/pytest.exe",
+            "args": [
+                "--maxfail=1",
+                "--disable-warnings",
+                "-q"
+            ],
+            "console": "integratedTerminal",
+            "env": {
+                "PYTHONPATH": "${workspaceFolder}"
+            }
         }
     ]
 }
