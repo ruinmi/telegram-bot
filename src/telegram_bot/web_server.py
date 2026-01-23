@@ -1195,26 +1195,33 @@ def search_messages(
         keywords = query.split()
         conditions = []
         params = []
+        fields_or = " OR ".join([
+            "LOWER(m.date) LIKE ?",
+            'LOWER(COALESCE(m.msg, "")) LIKE ?',
+            'LOWER(COALESCE(m.msg_file_name, "")) LIKE ?',
+        ])
+                
         for kw in keywords:
+            neg = kw.startswith("-")
+            kw = kw[1:] if neg else kw
+            kw = kw.strip().lower()
+            if not kw:
+                continue
+            
             pattern = f"%{kw}%"
-            conditions.append(
-                "("
-                + " OR ".join(
-                    [
-                        "LOWER(m.date) LIKE ?",
-                        'LOWER(COALESCE(m.msg, "")) LIKE ?',
-                        'LOWER(COALESCE(m.msg_file_name, "")) LIKE ?',
-                    ]
-                )
-                + ")"
-            )
+            if neg:
+                conditions.append(f"NOT ({fields_or})")
+            else:
+                conditions.append(f"({fields_or})")
             params.extend([pattern, pattern, pattern])
 
-        where_clause = " AND ".join(conditions)
+        where_sql = ""
+        if conditions:
+            where_sql = " AND " + " AND ".join(conditions)
 
         sql_count = f"""
             SELECT COUNT(*) FROM messages m
-            WHERE m.chat_id=? AND {where_clause}
+            WHERE m.chat_id=?{where_sql}
         """
         cur.execute(sql_count, (chat_id, *params))
         total = cur.fetchone()[0]
@@ -1255,7 +1262,7 @@ def search_messages(
             FROM messages m
             LEFT JOIN messages r
                 ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
-            WHERE m.chat_id=? AND {where_clause}
+            WHERE m.chat_id=?{where_sql}
             ORDER BY m.msg_id
             LIMIT ? OFFSET ?
         """

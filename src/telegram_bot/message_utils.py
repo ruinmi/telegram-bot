@@ -68,6 +68,9 @@ def is_ali_link_stale(link: str) -> bool:
         data = resp.json()
         if 'share_name' not in data:
             return True
+        if 'has_pwd' in data and not data['has_pwd']:
+            if 'file_infos' not in data or len(data['file_infos']) == 0:
+                return True
     except Exception as e:
         print(f"Error checking ali link: {e}")
     return False

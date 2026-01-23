@@ -134,6 +134,55 @@ function highlightText(text, searchValue) {
     return text;
 }
 
+function _linkifyHtml(html) {
+  const container = document.createElement("div");
+  container.innerHTML = html;
+
+  const urlRegex = /https?:\/\/[^\s<>"')\]]+/g;
+
+  const walker = document.createTreeWalker(
+    container,
+    NodeFilter.SHOW_TEXT,
+    null
+  );
+
+  const textNodes = [];
+  let node;
+  while ((node = walker.nextNode())) {
+    // 跳过 a 标签内部，避免重复 link
+    if (node.parentNode?.closest("a")) continue;
+    textNodes.push(node);
+  }
+
+  for (const textNode of textNodes) {
+    const text = textNode.nodeValue;
+    if (!urlRegex.test(text)) continue;
+
+    const frag = document.createDocumentFragment();
+    let lastIndex = 0;
+
+    text.replace(urlRegex, (url, index) => {
+      // 前面的普通文本
+      frag.append(text.slice(lastIndex, index));
+
+      // a 标签
+      const a = document.createElement("a");
+      a.href = url;
+      a.textContent = url;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      frag.append(a);
+
+      lastIndex = index + url.length;
+    });
+
+    frag.append(text.slice(lastIndex));
+    textNode.replaceWith(frag);
+  }
+
+  return container.innerHTML;
+}
+
 
 
 // 根据单个消息数据生成 HTML 结构
@@ -144,9 +193,7 @@ export function createMessageHtml(message, index, searchValue) {
     let messageContent = message.msg
         ? highlightText(message.msg, searchValue)
         : '';
-    messageContent = messageContent
-        .replace(/(https?:\/\/\S+)/g, '<a href="$1" target="_blank">$1</a>')
-        .replace(/\n/g, '<br/>');
+    messageContent = _linkifyHtml(messageContent).replace(/\n/g, '<br/>');
 
     // 占位变量
     let replyHtml     = '';
