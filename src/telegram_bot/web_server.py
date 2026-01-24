@@ -492,7 +492,7 @@ def _cleanup_stale_links_worker(
                     if not stale:
                         is_stale = False
                     else:
-                        logger.warning(f"delete: msg_id={msg_id} link={link} provider={provider} stale={stale}")
+                        logger.warning(f"stale: msg_id={msg_id} link={link} provider={provider} msg_text={msg_text[:12]}... links={links}")
                 except Exception as e:
                     errors += 1
                     should_keep = True

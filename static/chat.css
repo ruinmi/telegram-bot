@@ -302,10 +302,30 @@ body {
 
 .reactions span {
     margin-right: 6px;
-    background: #5d5d5d59;
+    background: #907fe3;
     border-radius: 3rem;
-    padding: 5px 7px;
+    padding: 0 7px;
     font-weight: 400;
+    height: 30px;
+    display: inline-block;
+    text-align: center;
+    align-items: center;
+    justify-items: center;
+    line-height: 30px;
+    user-select: none;
+    cursor: pointer;
+}
+
+.reactions span:hover {
+    background: #9989e5;
+}
+
+.left .reactions span:hover {
+    background: #312d3e;
+}
+
+.left .reactions span {
+    background: #292730;
 }
 
 .select-component {
