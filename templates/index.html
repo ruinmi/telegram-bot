@@ -343,6 +343,32 @@
       padding: 10px 14px 10px 0;
     }
 
+    .chat-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-radius: 999px;
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      background: rgba(56, 189, 248, 0.12);
+      color: rgba(226, 232, 240, 0.95);
+      font-size: 13px;
+      user-select: none;
+      cursor: pointer;
+      margin-left: 8px;
+      transition: border-color 0.22s ease, background 0.22s ease, transform 0.18s ease;
+    }
+
+    .chat-toggle:hover {
+      border-color: rgba(56, 189, 248, 0.5);
+      background: rgba(56, 189, 248, 0.16);
+      transform: translateY(-1px);
+    }
+
+    .chat-toggle input {
+      margin: 0;
+    }
+
     .chat-actions button {
       padding: 10px 18px;
       background: rgba(248, 113, 113, 0.15);
@@ -571,6 +597,13 @@
                   <small>获取非媒体消息和媒体消息</small>
                 </div>
               </label>
+              <label class="option-item">
+                <input type="checkbox" id="refreshReactions" />
+                <div class="option-item__content">
+                  <span class="option-item__title">更新历史表情</span>
+                  <small>开启后每次同步会全量刷新 reactions（仅更新表情变化）。</small>
+                </div>
+              </label>
             </div>
           </div>
         </div>
@@ -727,15 +760,50 @@
             label.appendChild(link);
             li.appendChild(label);
 
-            const actions = document.createElement('div');
-            actions.className = 'chat-actions';
+          const actions = document.createElement('div');
+          actions.className = 'chat-actions';
 
-            const delBtn = document.createElement('button');
-            delBtn.type = 'button';
-            delBtn.textContent = '删除';
-            delBtn.addEventListener('click', (event) => {
-              event.preventDefault();
-              event.stopPropagation();
+          const reactionsToggle = document.createElement('label');
+          reactionsToggle.className = 'chat-toggle';
+          const reactionsCheckbox = document.createElement('input');
+          reactionsCheckbox.type = 'checkbox';
+          reactionsCheckbox.checked = !!chat.refresh_reactions;
+          reactionsToggle.addEventListener('click', (event) => event.stopPropagation());
+          reactionsCheckbox.addEventListener('change', async (event) => {
+            event.stopPropagation();
+
+            const nextValue = !!reactionsCheckbox.checked;
+            reactionsCheckbox.disabled = true;
+            try {
+              const res = await fetch('update_chat_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: chat.id, refresh_reactions: nextValue })
+              });
+              if (!res.ok) {
+                reactionsCheckbox.checked = !nextValue;
+                showToast('更新失败，请重试。', 'error');
+                return;
+              }
+              showToast(nextValue ? '已开启：更新历史表情。' : '已关闭：更新历史表情。');
+            } catch (e) {
+              reactionsCheckbox.checked = !nextValue;
+              showToast('更新失败，请重试。', 'error');
+            } finally {
+              reactionsCheckbox.disabled = false;
+            }
+          });
+          const reactionsText = document.createElement('span');
+          reactionsText.textContent = '更新表情';
+          reactionsToggle.appendChild(reactionsCheckbox);
+          reactionsToggle.appendChild(reactionsText);
+
+          const delBtn = document.createElement('button');
+          delBtn.type = 'button';
+          delBtn.textContent = '删除';
+          delBtn.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
               const name = chat.remark || chat.id;
               if (!confirm(`确认删除：${name}？\\n将同时删除 data/ 和 downloads/ 下该 chat 的所有文件。`)) return;
 
@@ -839,12 +907,13 @@
                 });
             });
 
-            actions.appendChild(redownloadBtn);
-            actions.appendChild(cleanupBtn);
-            actions.appendChild(delBtn);
-            li.appendChild(actions);
-            ul.appendChild(li);
-          });
+          actions.appendChild(reactionsToggle);
+          actions.appendChild(redownloadBtn);
+          actions.appendChild(cleanupBtn);
+          actions.appendChild(delBtn);
+          li.appendChild(actions);
+          ul.appendChild(li);
+        });
         });
     }
 
@@ -880,6 +949,7 @@
       const download = document.getElementById('downloadFiles').checked;
       const downloadImagesOnly = document.getElementById('downloadImagesOnly').checked;
       const allMsg = document.getElementById('allMessages').checked;
+      const refreshReactions = document.getElementById('refreshReactions').checked;
       if (!id) {
         showToast('请填写聊天 ID 后再添加频道。', 'error');
         return;
@@ -893,7 +963,8 @@
           download_files: downloadImagesOnly ? true : download,
           download_images_only: downloadImagesOnly,
           all_messages: allMsg,
-          raw_messages: true
+          raw_messages: true,
+          refresh_reactions: refreshReactions
         })
       })
         .then(r => r.json())
@@ -904,6 +975,7 @@
           document.getElementById('downloadFiles').disabled = false;
           document.getElementById('downloadImagesOnly').checked = false;
           document.getElementById('allMessages').checked = true;
+          document.getElementById('refreshReactions').checked = false;
           showToast('频道已添加到列表。');
           loadChats();
         });

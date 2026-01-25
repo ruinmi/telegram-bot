@@ -59,10 +59,16 @@ class AddChatRequest(BaseModel):
     download_images_only: bool = False
     all_messages: bool = True
     raw_messages: bool = True
+    refresh_reactions: bool = False
 
 
 class ChatIdRequest(BaseModel):
     chat_id: str
+
+
+class UpdateChatSettingsRequest(BaseModel):
+    chat_id: str
+    refresh_reactions: bool | None = None
 
 
 class RedownloadChatRequest(BaseModel):
@@ -113,10 +119,6 @@ def start_chat_worker(chat: dict, interval: int = 1800) -> None:
         return
 
     remark = chat.get("remark")
-    is_download = bool(chat.get("download_files", True))
-    download_images_only = bool(chat.get("download_images_only", False))
-    is_all = bool(chat.get("all_messages", True))
-    is_raw = bool(chat.get("raw_messages", True))
 
     if not workers_started():
         logger.info(f"Worker {remark} will not start (workers not started)")
@@ -130,15 +132,23 @@ def start_chat_worker(chat: dict, interval: int = 1800) -> None:
     stop_event = Event()
     _chat_worker_stop_events[chat_id] = stop_event
 
+    def get_latest_chat_config() -> dict:
+        chats = load_chats()
+        latest = next((c for c in chats if str(c.get("id")) == chat_id), None)
+        return latest if isinstance(latest, dict) else chat
+
     def worker():
         while not stop_event.is_set():
+            latest = get_latest_chat_config()
+            latest_remark = latest.get("remark") or remark
             handle(
                 chat_id,
-                is_download=is_download,
-                is_all=is_all,
-                is_raw=is_raw,
-                remark=remark,
-                download_images_only=download_images_only,
+                is_download=bool(latest.get("download_files", True)),
+                is_all=bool(latest.get("all_messages", True)),
+                is_raw=bool(latest.get("raw_messages", True)),
+                remark=latest_remark,
+                download_images_only=bool(latest.get("download_images_only", False)),
+                refresh_reactions=bool(latest.get("refresh_reactions", False)),
             )
             stop_event.wait(interval)
 
@@ -661,6 +671,28 @@ def list_chats():
     return {"chats": load_chats()}
 
 
+@app.post("/update_chat_settings")
+def update_chat_settings(payload: UpdateChatSettingsRequest):
+    chat_id = str(payload.chat_id or "").strip()
+    if not chat_id:
+        return _json_error(400, "chat_id required")
+
+    chats = load_chats()
+    chat = next((c for c in chats if str(c.get("id")) == chat_id), None)
+    if not chat:
+        return _json_error(404, "chat not found")
+
+    updated = False
+    if payload.refresh_reactions is not None:
+        chat["refresh_reactions"] = bool(payload.refresh_reactions)
+        updated = True
+
+    if updated:
+        save_chats(chats)
+
+    return {"updated": updated, "chat": chat}
+
+
 @app.post("/add_chat")
 def add_chat(payload: AddChatRequest):
     input_chat_id = str(payload.chat_id or "").strip()
@@ -684,6 +716,7 @@ def add_chat(payload: AddChatRequest):
         "download_images_only": download_images_only,
         "all_messages": bool(payload.all_messages),
         "raw_messages": bool(payload.raw_messages),
+        "refresh_reactions": bool(payload.refresh_reactions),
         "username": username,
     }
 

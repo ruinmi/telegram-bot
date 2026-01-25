@@ -6,7 +6,7 @@ import json
 import uuid
 import urllib.parse
 import threading
-from .db_utils import get_last_export_time, set_exported_time
+from .db_utils import get_last_export_time, set_exported_time, update_reactions
 from .http_client import download_file
 from .paths import BASE_DIR, ensure_runtime_dirs
 
@@ -15,13 +15,13 @@ ensure_runtime_dirs()
 
 IMAGE_EXTENSIONS = "jpg,jpeg,png,webp,gif"
 
-def _tail_lines(text: str | None, max_lines: int = 80) -> str:
-    if not text:
-        return ""
-    lines = text.splitlines()
-    if len(lines) <= max_lines:
-        return text.strip()
-    return ("\n".join(lines[-max_lines:])).strip()
+# def _tail_lines(text: str | None, max_lines: int = 80) -> str:
+#     if not text:
+#         return ""
+#     lines = text.splitlines()
+#     if len(lines) <= max_lines:
+#         return text.strip()
+#     return ("\n".join(lines[-max_lines:])).strip()
 
 
 def _run_tdl_command(command: list[str], logger, label: str):
@@ -42,18 +42,18 @@ def _run_tdl_command(command: list[str], logger, label: str):
             logger.exception(f"{label}: Failed to run command: {e}")
             raise
 
-    stdout_tail = _tail_lines(result.stdout)
-    stderr_tail = _tail_lines(result.stderr)
+    # stdout_tail = _tail_lines(result.stdout)
+    # stderr_tail = _tail_lines(result.stderr)
 
-    logger.info(f"{label}: returncode={result.returncode}")
-    if stdout_tail:
-        logger.info(f"{label}: stdout (tail):\n{stdout_tail}")
-    if stderr_tail:
-        # Many CLIs write progress / warnings to stderr even on success.
-        if result.returncode == 0:
-            logger.info(f"{label}: stderr (tail):\n{stderr_tail}")
-        else:
-            logger.error(f"{label}: stderr (tail):\n{stderr_tail}")
+    # logger.info(f"{label}: returncode={result.returncode}")
+    # if stdout_tail:
+    #     logger.info(f"{label}: stdout (tail):\n{stdout_tail}")
+    # if stderr_tail:
+    #     # Many CLIs write progress / warnings to stderr even on success.
+    #     if result.returncode == 0:
+    #         logger.info(f"{label}: stderr (tail):\n{stderr_tail}")
+    #     else:
+    #         logger.error(f"{label}: stderr (tail):\n{stderr_tail}")
 
     return result
 
@@ -130,6 +130,62 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
         set_exported_time(conn, current_time)
     else:
         logger.error("Error exporting chat (see tdl chat export stdout/stderr above).")
+
+
+def refresh_chat_reactions(their_id: str, msg_json_temp_path: str, conn, remark: str | None = None) -> int:
+    """
+    Export full chat history and refresh reactions for existing DB messages.
+
+    This does NOT touch the DB export cursor (meta.exported_time/last_export_time).
+    """
+    logger = get_logger(remark or their_id)
+    current_time = str(int(time.time()))
+
+    command = [
+        "tdl",
+        "chat",
+        "export",
+        "-c",
+        str(their_id),
+        "--with-content",
+        "-o",
+        msg_json_temp_path,
+        "-i",
+        f"0,{current_time}",
+        "--raw",
+        "--all",
+    ]
+
+    result = _run_tdl_command(command, logger, label="tdl chat export (refresh reactions)")
+    if result.returncode != 0:
+        logger.error("Refresh reactions export failed (see stdout/stderr above).")
+        return 0
+
+    try:
+        with open(msg_json_temp_path, "r", encoding="utf-8") as file:
+            data = json.load(file)
+        raw_messages = data.get("messages", [])
+        updates: list[tuple[int, dict | None]] = []
+        for msg in raw_messages:
+            msg_id = msg.get("id")
+            raw = msg.get("raw") or {}
+            reactions_obj = raw.get("Reactions")
+            if msg_id is None:
+                continue
+            updates.append((int(msg_id), reactions_obj if isinstance(reactions_obj, dict) else None))
+
+        changed = update_reactions(conn, str(their_id), updates)
+        logger.info(f"Refreshed reactions: updated_rows={changed}")
+        return changed
+    except Exception as e:
+        logger.exception(f"Refresh reactions failed to parse/apply: {e}")
+        return 0
+    finally:
+        try:
+            if os.path.exists(msg_json_temp_path):
+                os.remove(msg_json_temp_path)
+        except Exception:
+            pass
 
 def download(url, their_id, remark=None):
     logger = get_logger(remark or their_id)

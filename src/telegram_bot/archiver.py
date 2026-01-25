@@ -6,7 +6,7 @@ import os
 import re
 from . import db_utils
 from .db_utils import get_connection, save_messages
-from .update_messages import export_chat
+from .update_messages import export_chat, refresh_chat_reactions
 from .project_logger import get_logger
 from .message_utils import load_json, parse_messages
 from .og_utils import calculate_size, get_open_graph_info
@@ -15,13 +15,22 @@ from .paths import BASE_DIR, ensure_runtime_dirs
 ensure_runtime_dirs()
 
 
-def handle(chat_id: str, is_download: bool, is_all: bool, is_raw: bool, remark: str | None, download_images_only: bool = False):
+def handle(
+    chat_id: str,
+    is_download: bool,
+    is_all: bool,
+    is_raw: bool,
+    remark: str | None,
+    download_images_only: bool = False,
+    refresh_reactions: bool = False,
+):
     """Export messages and store them in the database."""
     logger = get_logger(remark or chat_id)
     data_dir = BASE_DIR / 'data' / chat_id
     data_dir.mkdir(parents=True, exist_ok=True)
     msg_json_path = str(data_dir / f'{chat_id}_chat.json')
     msg_json_temp_path = str(data_dir / f'{chat_id}_chat_temp.json')
+    reactions_json_temp_path = str(data_dir / f'{chat_id}_reactions_temp.json')
     db_path = str(data_dir / 'messages.db')
 
     with get_connection(chat_id) as conn:
@@ -65,6 +74,8 @@ def handle(chat_id: str, is_download: bool, is_all: bool, is_raw: bool, remark: 
                     m['og_info'] = og_info
                 messages = parse_messages(chat_id, messages_data, tz, remark)
                 save_messages(conn, chat_id, messages)
+                if refresh_reactions:
+                    refresh_chat_reactions(chat_id, reactions_json_temp_path, conn, remark=remark)
                 db_utils.set_last_export_time(conn, db_utils.get_exported_time(conn))
             except Exception as e:
                 logger.exception(f'Error parsing {msg_json_path}: {e}')

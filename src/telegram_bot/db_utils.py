@@ -120,3 +120,33 @@ def update_og_info(conn, chat_id, og_fetcher):
         except Exception:
             continue
     conn.commit()
+
+
+def update_reactions(conn, chat_id: str, reactions_by_msg_id: list[tuple[int, dict | None]]) -> int:
+    """
+    Update reactions for existing messages.
+
+    reactions_by_msg_id items are (msg_id, reactions_obj). When reactions_obj is None / empty,
+    reactions is set to NULL.
+    """
+    if not reactions_by_msg_id:
+        return 0
+
+    def _normalize(reactions_obj: dict | None) -> str | None:
+        if not isinstance(reactions_obj, dict):
+            return None
+        results = reactions_obj.get("Results")
+        if not isinstance(results, list) or len(results) == 0:
+            return None
+        return json.dumps(reactions_obj, ensure_ascii=False)
+
+    update_sql = "UPDATE messages SET reactions=? WHERE chat_id=? AND msg_id=?"
+    data = [(_normalize(obj), chat_id, int(msg_id)) for msg_id, obj in reactions_by_msg_id if msg_id is not None]
+    if not data:
+        return 0
+
+    before = conn.total_changes
+    conn.executemany(update_sql, data)
+    changed = conn.total_changes - before
+    conn.commit()
+    return changed
