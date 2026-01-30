@@ -51,6 +51,10 @@ _CLEANUP_LINKS_PROGRESS_FLUSH_EVERY = 10
 
 _CLEANUP_SUPPORTED_PROVIDERS = ("baidu", "quark", "ali", "xunlei")
 
+_download_missing_images_jobs: dict[str, dict] = {}
+_download_missing_images_jobs_lock = Lock()
+_download_missing_images_global_lock = Lock()
+
 
 class AddChatRequest(BaseModel):
     chat_id: str
@@ -92,6 +96,11 @@ class DownloadTelegramMediaRequest(BaseModel):
     telegram_urls: list[str] | None = None
     expected_url: str | None = None
     expected_urls: list[str] | None = None
+
+
+class DownloadMissingImagesRequest(BaseModel):
+    chat_id: str
+    batch_size: int = 10
 
 
 def _json_error(status_code: int, message: str) -> JSONResponse:
@@ -333,6 +342,12 @@ def _cleanup_links_extract_links(text: str) -> list[str]:
 def _cleanup_links_job_snapshot(chat_id: str) -> dict:
     with _cleanup_links_jobs_lock:
         job = _cleanup_links_jobs.get(chat_id)
+        return dict(job) if isinstance(job, dict) else {}
+
+
+def _download_missing_images_job_snapshot(chat_id: str) -> dict:
+    with _download_missing_images_jobs_lock:
+        job = _download_missing_images_jobs.get(chat_id)
         return dict(job) if isinstance(job, dict) else {}
 
 
@@ -1036,6 +1051,193 @@ def download_telegram_media(payload: DownloadTelegramMediaRequest):
                 continue
 
     return {"ok": True, "media_urls": media_urls, "downloaded": [p.name for p in new_files], "renamed": renamed}
+
+
+@app.post("/download_missing_images")
+def download_missing_images(payload: DownloadMissingImagesRequest):
+    chat_id = str(payload.chat_id or "").strip()
+    if not chat_id:
+        return _json_error(400, "chat_id required")
+
+    batch_size = int(payload.batch_size or 10)
+    batch_size = max(1, min(batch_size, 50))
+
+    existing = _download_missing_images_job_snapshot(chat_id)
+    if existing and existing.get("status") == "running":
+        return JSONResponse(status_code=409, content=existing)
+
+    if not _download_missing_images_global_lock.acquire(blocking=False):
+        return JSONResponse(status_code=409, content={"error": "已有下载任务正在运行，请稍后再试。"})
+
+    chats = load_chats()
+    chat = next((c for c in chats if str(c.get("id")) == chat_id), None)
+    remark = chat.get("remark") if isinstance(chat, dict) else None
+    username = chat.get("username") if isinstance(chat, dict) else ""
+
+    job_id = f"{int(time.time())}_{uuid.uuid4().hex[:8]}"
+    job = {
+        "chat_id": chat_id,
+        "job_id": job_id,
+        "status": "running",
+        "batch_size": batch_size,
+        "started_at": int(time.time()),
+        "finished_at": None,
+        "total_images": 0,
+        "processed_images": 0,
+        "downloaded_images": 0,
+        "failed_batches": 0,
+        "last_error": None,
+    }
+    with _download_missing_images_jobs_lock:
+        _download_missing_images_jobs[chat_id] = job
+
+    def worker():
+        dl_logger = get_logger(remark or chat_id)
+        try:
+            conn = get_db(chat_id)
+            if not conn:
+                raise RuntimeError("db not found")
+
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT msg_file_name, msg_files FROM messages WHERE chat_id=? AND (msg_file_name IS NOT NULL OR msg_files IS NOT NULL)",
+                    (chat_id,),
+                )
+                rows = cur.fetchall()
+            finally:
+                conn.close()
+
+            def _is_image_path(p: str) -> bool:
+                return bool(re.search(r"\.(png|jpe?g|gif|webp)$", str(p or ""), flags=re.IGNORECASE))
+
+            candidates: set[str] = set()
+            for row in rows:
+                msg_file_name = row["msg_file_name"]
+                if msg_file_name and _is_image_path(msg_file_name):
+                    candidates.add(str(msg_file_name))
+
+                msg_files = row["msg_files"]
+                if msg_files:
+                    files_obj = msg_files
+                    if isinstance(files_obj, str):
+                        try:
+                            files_obj = json.loads(files_obj)
+                        except Exception:
+                            files_obj = None
+                    if isinstance(files_obj, list):
+                        for fn in files_obj:
+                            if fn and _is_image_path(fn):
+                                candidates.add(str(fn))
+
+            # Normalize to expected URL (/downloads/...) and check filesystem existence.
+            base = (Path(BASE_DIR) / "downloads").resolve()
+            missing_urls: list[str] = []
+            for path in sorted(candidates):
+                if path.startswith("/downloads/"):
+                    expected_url = path
+                    rel = path[len("/downloads/") :]
+                    fs = (Path(BASE_DIR) / "downloads" / rel).resolve()
+                elif path.startswith("downloads/"):
+                    expected_url = "/" + path
+                    fs = (Path(BASE_DIR) / path).resolve()
+                else:
+                    continue
+                if not fs.is_relative_to(base):
+                    continue
+                if not fs.is_file():
+                    missing_urls.append(expected_url)
+
+            with _download_missing_images_jobs_lock:
+                job["total_images"] = len(missing_urls)
+
+            if not missing_urls:
+                with _download_missing_images_jobs_lock:
+                    job["status"] = "done"
+                    job["finished_at"] = int(time.time())
+                return
+
+            def _derive_telegram_url(expected_url: str) -> str:
+                no_query = expected_url.split("#")[0].split("?")[0]
+                filename = no_query.rsplit("/", 1)[-1]
+                chunks = filename.split("_")
+                if len(chunks) < 2:
+                    return ""
+                try:
+                    msg_id = int(chunks[1])
+                except Exception:
+                    return ""
+                if username:
+                    return f"https://t.me/{username}/{msg_id}"
+                return f"https://t.me/c/{chat_id}/{msg_id}"
+
+            processed = 0
+            downloaded = 0
+            failed_batches = 0
+            for i in range(0, len(missing_urls), batch_size):
+                batch_expected = missing_urls[i : i + batch_size]
+                batch_urls = [u for u in (_derive_telegram_url(x) for x in batch_expected) if u]
+                if not batch_urls:
+                    processed += len(batch_expected)
+                    continue
+
+                try:
+                    result = download_telegram_media(
+                        DownloadTelegramMediaRequest(
+                            chat_id=chat_id,
+                            telegram_urls=batch_urls,
+                            expected_urls=batch_expected,
+                        )
+                    )
+                    if isinstance(result, JSONResponse):
+                        failed_batches += 1
+                    else:
+                        media_urls = result.get("media_urls") if isinstance(result, dict) else None
+                        if isinstance(media_urls, list):
+                            downloaded += len([x for x in media_urls if x.get("media_url")])
+                except Exception as e:
+                    failed_batches += 1
+                    with _download_missing_images_jobs_lock:
+                        job["last_error"] = str(e)
+
+                processed += len(batch_expected)
+                with _download_missing_images_jobs_lock:
+                    job["processed_images"] = processed
+                    job["downloaded_images"] = downloaded
+                    job["failed_batches"] = failed_batches
+
+            with _download_missing_images_jobs_lock:
+                job["status"] = "done"
+                job["finished_at"] = int(time.time())
+                job["processed_images"] = processed
+                job["downloaded_images"] = downloaded
+                job["failed_batches"] = failed_batches
+        except Exception as e:
+            dl_logger.exception(f"Download missing images worker crashed: chat_id={chat_id} error={e}")
+            with _download_missing_images_jobs_lock:
+                job["status"] = "error"
+                job["finished_at"] = int(time.time())
+                job["last_error"] = str(e)
+        finally:
+            try:
+                _download_missing_images_global_lock.release()
+            except RuntimeError:
+                pass
+
+    Thread(target=worker, daemon=True).start()
+    return _download_missing_images_job_snapshot(chat_id)
+
+
+@app.get("/download_missing_images_status/{chat_id}")
+def download_missing_images_status(chat_id: str):
+    chat_id = str(chat_id or "").strip()
+    if not chat_id:
+        return _json_error(400, "chat_id required")
+
+    job = _download_missing_images_job_snapshot(chat_id)
+    if not job:
+        return {"chat_id": chat_id, "status": "idle"}
+    return job
 
 
 @app.get("/messages/{chat_id}")

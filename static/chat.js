@@ -70,6 +70,8 @@ function ensureImageViewer() {
     root.innerHTML = `
       <div class="image-viewer__backdrop" data-action="close"></div>
       <div class="image-viewer__content" role="dialog" aria-modal="true">
+        <button type="button" class="image-viewer__nav image-viewer__nav--prev" data-action="prev" aria-label="上一张">‹</button>
+        <button type="button" class="image-viewer__nav image-viewer__nav--next" data-action="next" aria-label="下一张">›</button>
         <button type="button" class="image-viewer__close" data-action="close" aria-label="关闭">×</button>
         <img class="image-viewer__img" data-action="close" data-role="img" alt="图片预览" />
       </div>
@@ -79,24 +81,56 @@ function ensureImageViewer() {
     const img = root.querySelector('[data-role="img"]');
     img.addEventListener('error', () => applyImageFallback(img));
 
+    let items = [];
+    let index = 0;
+
     const close = () => {
         root.classList.add('hidden');
         document.body.classList.remove('no-scroll');
     };
 
+    const showAt = (nextIndex) => {
+        if (!items || items.length === 0) return;
+        const len = items.length;
+        index = ((Number(nextIndex) % len) + len) % len;
+        const src = resolveMediaUrl(items[index]);
+        if (!src) return;
+        img.dataset.fallbackApplied = '0';
+        img.classList.remove('img-broken');
+        img.src = src;
+
+        const prevBtn = root.querySelector('.image-viewer__nav--prev');
+        const nextBtn = root.querySelector('.image-viewer__nav--next');
+        const showNav = len > 1;
+        if (prevBtn) prevBtn.style.display = showNav ? 'block' : 'none';
+        if (nextBtn) nextBtn.style.display = showNav ? 'block' : 'none';
+    };
+
+    const setGallery = (nextItems, nextIndex) => {
+        items = Array.isArray(nextItems) ? nextItems.filter(Boolean) : [];
+        index = Number.isFinite(Number(nextIndex)) ? Number(nextIndex) : 0;
+        showAt(index);
+    };
+
     root.addEventListener('click', (e) => {
         const action = e.target?.dataset?.action;
         if (action === 'close') close();
+        if (action === 'prev') showAt(index - 1);
+        if (action === 'next') showAt(index + 1);
     });
 
     document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !root.classList.contains('hidden')) close();
+        if (root.classList.contains('hidden')) return;
+        if (e.key === 'ArrowLeft') showAt(index - 1);
+        if (e.key === 'ArrowRight') showAt(index + 1);
     });
 
     _imageViewer = {
         root,
         img,
-        close
+        close,
+        setGallery
     };
     return _imageViewer;
 }
@@ -105,9 +139,21 @@ function openImageViewer(url) {
     const src = resolveMediaUrl(url);
     if (!src) return;
     const viewer = ensureImageViewer();
-    viewer.img.dataset.fallbackApplied = '0';
-    viewer.img.classList.remove('img-broken');
-    viewer.img.src = src;
+    viewer.setGallery([src], 0);
+    viewer.root.classList.remove('hidden');
+    document.body.classList.add('no-scroll');
+}
+
+function openImageViewerFromTile(tile) {
+    const imgSrc = tile?.dataset?.imgSrc;
+    if (!imgSrc) return;
+    const galleryRoot = tile.closest('.image-grid') || tile.closest('.reply-info') || tile.closest('.message-frame') || tile.closest('.message');
+    const tiles = galleryRoot ? Array.from(galleryRoot.querySelectorAll('.img-tile[data-img-src]')) : [tile];
+    const items = tiles.map(t => t.dataset?.imgSrc).filter(Boolean);
+    const idx = Math.max(0, tiles.indexOf(tile));
+
+    const viewer = ensureImageViewer();
+    viewer.setGallery(items, idx);
     viewer.root.classList.remove('hidden');
     document.body.classList.add('no-scroll');
 }
@@ -281,6 +327,194 @@ async function downloadTelegramMediaForTile(tile) {
             t.tile.classList.remove('img-downloading');
         }
     }
+}
+
+async function downloadAllBrokenImages(batchSize = 10) {
+    const btn = document.getElementById('downloadBrokenImages');
+    if (btn) btn.disabled = true;
+
+    const brokenImgs = Array.from(document.querySelectorAll('.img-tile[data-img-src] img.img-broken'));
+    const tiles = brokenImgs
+        .map(img => img.closest('.img-tile[data-img-src]'))
+        .filter(Boolean);
+
+    const deriveTelegramUrlFromImgSrc = (imgSrc) => {
+        const raw = String(imgSrc || '');
+        const noQuery = raw.split('#')[0].split('?')[0];
+        const parts = noQuery.split('/').filter(Boolean);
+        if (parts.length === 0) return '';
+
+        const filename = parts[parts.length - 1];
+        const chunks = filename.split('_');
+        if (chunks.length < 2) return '';
+        const msgId = Number(chunks[1]);
+        if (!Number.isFinite(msgId)) return '';
+
+        const username = (window.CHAT_USERNAME || '').trim();
+        if (username) return `https://t.me/${username}/${msgId}`;
+        return `https://t.me/c/${chatId}/${msgId}`;
+    };
+
+    const targets = tiles
+        .map(tile => {
+            const expectedUrl = tile.dataset?.imgSrc;
+            if (!expectedUrl || !String(expectedUrl).startsWith('/downloads/')) return null;
+            const telegramUrl = deriveTelegramUrlFromImgSrc(expectedUrl);
+            if (!telegramUrl) return null;
+            return { tile, telegramUrl, expectedUrl: String(expectedUrl) };
+        })
+        .filter(Boolean);
+
+    if (targets.length === 0) {
+        showToast('没有发现损坏图片。');
+        if (btn) btn.disabled = false;
+        return;
+    }
+
+    const total = targets.length;
+    let done = 0;
+    let success = 0;
+
+    for (let i = 0; i < targets.length; i += batchSize) {
+        const batch = targets.slice(i, i + batchSize);
+        for (const t of batch) t.tile.classList.add('img-downloading');
+
+        try {
+            showToast(`下载中：${done}/${total}…`);
+            const res = await fetch(`../download_telegram_media`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    chat_id: chatId,
+                    telegram_urls: batch.map(t => t.telegramUrl),
+                    expected_urls: batch.map(t => t.expectedUrl),
+                }),
+            });
+            const data = await res.json().catch(() => ({}));
+            const mediaUrls = Array.isArray(data?.media_urls) ? data.media_urls : [];
+            if (!res.ok || !data || data.ok !== true || mediaUrls.length === 0) {
+                showToast('批量下载失败（将继续下一批）。', 'error');
+                continue;
+            }
+
+            const mapByExpected = new Map(
+                mediaUrls
+                    .filter(it => it && it.expected_url && it.media_url)
+                    .map(it => [String(it.expected_url), String(it.media_url)])
+            );
+
+            const now = Date.now();
+            for (const t of batch) {
+                const mediaUrl = mapByExpected.get(String(t.expectedUrl));
+                if (!mediaUrl) continue;
+                success += 1;
+                t.tile.dataset.imgSrc = mediaUrl;
+                const img = t.tile.querySelector('img');
+                if (img) {
+                    img.dataset.fallbackApplied = '0';
+                    img.classList.remove('img-broken');
+                    const bust = mediaUrl.includes('?') ? `&v=${now}` : `?v=${now}`;
+                    img.src = mediaUrl + bust;
+                }
+            }
+        } catch (e) {
+            showToast('批量下载失败（将继续下一批）。', 'error');
+        } finally {
+            done += batch.length;
+            for (const t of batch) t.tile.classList.remove('img-downloading');
+        }
+    }
+
+    showToast(`下载完成：成功 ${success}/${total}${success === total ? '。' : '（部分失败）'}`, success === total ? 'info' : 'error');
+    if (btn) btn.disabled = false;
+}
+
+let _missingImagesPollTimer = null;
+function stopMissingImagesPoll() {
+    if (_missingImagesPollTimer) {
+        clearInterval(_missingImagesPollTimer);
+        _missingImagesPollTimer = null;
+    }
+}
+
+async function startDownloadMissingImagesJob(batchSize = 10) {
+    const btn = document.getElementById('downloadBrokenImages');
+    if (btn) btn.disabled = true;
+
+    stopMissingImagesPoll();
+
+    try {
+        const res = await fetch(`../download_missing_images`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ chat_id: chatId, batch_size: batchSize }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 409) {
+            showToast('下载任务已在运行，正在获取进度…');
+            startMissingImagesPoll();
+            return;
+        }
+        if (!res.ok || !data || !data.status) {
+            showToast(data?.error || '启动下载失败，请重试。', 'error');
+            if (btn) btn.disabled = false;
+            return;
+        }
+
+        showToast('已启动下载（后台执行）。');
+        startMissingImagesPoll();
+    } catch (e) {
+        showToast('启动下载失败，请重试。', 'error');
+        if (btn) btn.disabled = false;
+    }
+}
+
+function startMissingImagesPoll() {
+    const btn = document.getElementById('downloadBrokenImages');
+
+    const poll = () => {
+        fetch(`../download_missing_images_status/${encodeURIComponent(chatId)}`)
+            .then(r => r.json())
+            .then(data => {
+                if (!data || data.status === 'idle') {
+                    stopMissingImagesPoll();
+                    if (btn) btn.disabled = false;
+                    return;
+                }
+
+                if (data.status === 'running') {
+                    const total = Number(data.total_images ?? 0);
+                    const processed = Number(data.processed_images ?? 0);
+                    const downloaded = Number(data.downloaded_images ?? 0);
+                    showToast(`下载中：${processed}/${total}（成功 ${downloaded}）…`);
+                    return;
+                }
+
+                stopMissingImagesPoll();
+                if (btn) btn.disabled = false;
+                if (data.status === 'done') {
+                    const total = Number(data.total_images ?? 0);
+                    const downloaded = Number(data.downloaded_images ?? 0);
+                    const failedBatches = Number(data.failed_batches ?? 0);
+                    if (total === 0) {
+                        showToast('没有缺失图片。');
+                        return;
+                    }
+                    showToast(`下载完成：成功 ${downloaded}/${total}${failedBatches ? `，失败批次 ${failedBatches}` : ''}`);
+                    return;
+                }
+
+                if (data.status === 'error') {
+                    showToast(`下载失败：${data.last_error || '未知错误'}`, 'error');
+                }
+            })
+            .catch(() => { });
+    };
+
+    poll();
+    stopMissingImagesPoll();
+    _missingImagesPollTimer = setInterval(poll, 2500);
 }
 
 function resetReactionSortingState() {
@@ -1150,7 +1384,7 @@ document.addEventListener('click', (event) => {
         downloadTelegramMediaForTile(tile);
         return;
     }
-    openImageViewer(tile.dataset.imgSrc);
+    openImageViewerFromTile(tile);
 });
 
 document.addEventListener('click', (event) => {
@@ -1170,6 +1404,11 @@ document.addEventListener('keydown', (event) => {
 const exitRepliesBtn = document.getElementById('exitReplies');
 if (exitRepliesBtn) {
     exitRepliesBtn.addEventListener('click', () => exitRepliesView());
+}
+
+const downloadBrokenBtn = document.getElementById('downloadBrokenImages');
+if (downloadBrokenBtn) {
+    downloadBrokenBtn.addEventListener('click', () => startDownloadMissingImagesJob(10));
 }
 
 // 点击气泡之外的“整行背景”区域：打开 Telegram 对应消息

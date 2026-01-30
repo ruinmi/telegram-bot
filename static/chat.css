@@ -101,8 +101,30 @@ body {
     transition: all 0.2s;
 }
 
+#downloadBrokenImages {
+    margin-left: 10px;
+    background: #212121;
+    color: white;
+    border: none;
+    border-radius: .575rem;
+    cursor: pointer;
+    line-height: 16px;
+    height: 37px;
+    padding: 0 14px;
+    transition: all 0.2s;
+}
+
 #exitReplies:hover {
     background: #111111;
+}
+
+#downloadBrokenImages:hover {
+    background: #111111;
+}
+
+#downloadBrokenImages:disabled {
+    opacity: 0.6;
+    cursor: default;
 }
 
 #messages {
@@ -532,6 +554,35 @@ body {
     justify-content: center;
     max-width: 96vw;
     max-height: 92vh;
+}
+
+.image-viewer__nav {
+    position: absolute;
+    top: 50%;
+    width: 44px;
+    height: 44px;
+    margin-top: -22px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    background: rgba(0, 0, 0, 0.45);
+    color: #fff;
+    font-size: 28px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 2;
+    display: none;
+}
+
+.image-viewer__nav:hover {
+    background: rgba(0, 0, 0, 0.72);
+}
+
+.image-viewer__nav--prev {
+    left: -64px;
+}
+
+.image-viewer__nav--next {
+    right: -64px;
 }
 
 .image-viewer__img {
