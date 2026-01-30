@@ -366,18 +366,20 @@ export function createMessageHtml(message, index, searchValue) {
     // 6. 拼接整体
     return `
     <div class="message ${hasImage} ${position} clearfix" data-msg-id="${message.msg_id ?? ''}">
-      <div class="message-frame ${position}">
-        <div class="user ${position}">${message.user}</div>
-        ${replyHtml}
-        ${mediaHtml}
-        ${message.msg ? `<div class="msg">${messageContent}</div>` : ''}
-        ${ogHtml}
-        ${reactionsHtml}
-        <div class="date ${position}">${message.date}</div>
-      </div>
-      <div class="message-to-telegram ${position}">
-        <a href="${telegramUrl}" target="_blank"></a>
-        <span class="to-icon"></span>
+      <div class="message-row ${position}">
+        <div class="message-frame ${position}">
+          <div class="user ${position}">${message.user}</div>
+          ${replyHtml}
+          ${mediaHtml}
+          ${message.msg ? `<div class="msg">${messageContent}</div>` : ''}
+          ${ogHtml}
+          ${reactionsHtml}
+          <div class="date ${position}">${message.date}</div>
+        </div>
+        <div class="message-to-telegram ${position}" data-telegram-url="${telegramUrl}">
+          <a href="${telegramUrl}" target="_blank" rel="noopener noreferrer"></a>
+          <span class="to-icon"></span>
+        </div>
       </div>
     </div>`;
 }

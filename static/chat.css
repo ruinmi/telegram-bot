@@ -425,7 +425,7 @@ body {
     object-fit: cover;
     background-color: #eee;
 }
-.has-image {
+.message.has-image .message-row {
     min-width: min(450px, 45vw);
 }
 

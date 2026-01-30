@@ -1,24 +1,42 @@
 .message {
-    max-width: min(600px, 60vw);
-    margin: 2px;
-    clear: both;
-    word-wrap: break-word;
+    width: 100%;
+    display: flex;
+    box-sizing: border-box;
+    padding: 2px 0;
     position: relative;
-    min-width: 8.35rem;
     color: white;
     text-align: left;
+}
+
+.message::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: transparent;
+    transition: background 0.2s;
+    pointer-events: none;
+    z-index: 0;
 }
 
 .message:hover .message-to-telegram {
     opacity: 1;
 }
 
+.message-row {
+    max-width: min(600px, 60vw);
+    margin: 2px;
+    position: relative;
+    min-width: 8.35rem;
+    z-index: 1;
+    cursor: auto;
+}
+
 .message.left {
-    float: left;
+    justify-content: flex-start;
 }
 
 .message.right {
-    float: right;
+    justify-content: flex-end;
 }
 
 .message.right .msg a {
@@ -36,6 +54,8 @@
 .message-frame {
     border-radius: .9375rem;
     overflow: hidden;
+    width: 100%;
+    word-wrap: break-word;
 }
 
 .message-frame.left {
@@ -83,6 +103,7 @@
     cursor: pointer;
     transition: all 0.2s;
     opacity: 0;
+    z-index: 2;
 }
 
 .message-to-telegram.left {
@@ -125,19 +146,11 @@
 
 .clearfix::after {
     content: "";
-    clear: both;
-    display: block;
-    width: 120vw;
-    position: absolute;
-    bottom: -.175rem;
-    top: -.0625rem;
-    left: 50%;
-    translate: -50%;
-    z-index: -1;
+    display: none;
 }
 
 @media screen and (max-width: 768px) {
-    .message {
+    .message-row {
         max-width: 320px;
     }
     .message-frame {

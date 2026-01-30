@@ -654,6 +654,19 @@ document.addEventListener('click', (event) => {
     openImageViewer(tile.dataset.imgSrc);
 });
 
+// 点击气泡之外的“整行背景”区域：打开 Telegram 对应消息
+document.addEventListener('click', (event) => {
+    const messageEl = event.target.closest('.message-to-telegram[data-telegram-url]');
+    if (!messageEl) return;
+
+    // 只处理点击在整行空白区域（target 即 .message 本身），避免影响文本选择/链接点击等
+    if (event.target !== messageEl) return;
+
+    const url = messageEl.dataset.telegramUrl;
+    if (!url) return;
+    window.open(url, '_blank', 'noopener,noreferrer');
+});
+
 // error 事件不冒泡：用捕获阶段统一处理图片加载失败
 document.addEventListener('error', (event) => {
     const target = event.target;
