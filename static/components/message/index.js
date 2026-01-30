@@ -87,6 +87,9 @@ function renderImagesInBubble(containerEl, imageList, options = {}) {
         const tile = document.createElement('div');
         tile.className = 'img-tile';
         tile.dataset.imgSrc = src;
+        if (options.telegramUrl) {
+            tile.dataset.telegramUrl = options.telegramUrl;
+        }
         tile.style.zIndex = '1';
         tile.style.width = `${w}px`;
         tile.style.height = `${h}px`;
@@ -188,6 +191,7 @@ function _linkifyHtml(html) {
 // 根据单个消息数据生成 HTML 结构
 export function createMessageHtml(message, index, searchValue) {
     const position = message.user === '我' ? 'right' : 'left';
+    const telegramUrl = chatUsername ? `https://t.me/${chatUsername}/${message.msg_id ?? ''}` : `https://t.me/c/${message.chat_id}/${message.msg_id ?? ''}`;
 
     // 1. 文本内容
     let messageContent = message.msg
@@ -229,8 +233,9 @@ export function createMessageHtml(message, index, searchValue) {
 
         if (d.msg_file_name && /\.(png|jpe?g|gif|webp)$/i.test(d.msg_file_name)) {
             const src = resolveMediaUrl(d.msg_file_name);
+            const replyTelegramUrl = chatUsername ? `https://t.me/${chatUsername}/${d.msg_id ?? ''}` : `https://t.me/c/${message.chat_id}/${d.msg_id ?? ''}`;
             imgPart = `<div class="reply-image">
-                   <div class="img-tile reply-image__btn" data-img-src="${src}">
+                   <div class="img-tile reply-image__btn" data-img-src="${src}" data-telegram-url="${replyTelegramUrl}">
                      <img src="${src}" alt="图片" loading="lazy">
                    </div>
                  </div>`;
@@ -238,9 +243,10 @@ export function createMessageHtml(message, index, searchValue) {
             const files = Array.isArray(d.msg_files)
                 ? d.msg_files
                 : JSON.parse(d.msg_files);
+            const replyTelegramUrl = chatUsername ? `https://t.me/${chatUsername}/${d.msg_id ?? ''}` : `https://t.me/c/${message.chat_id}/${d.msg_id ?? ''}`;
             imgPart = files.map(fn =>
                 /\.(png|jpe?g|gif|webp)$/i.test(fn)
-                    ? `<div class="reply-image"><div class="img-tile reply-image__btn" data-img-src="${resolveMediaUrl(fn)}"><img src="${resolveMediaUrl(fn)}" alt="图片" loading="lazy"></div></div>`
+                    ? `<div class="reply-image"><div class="img-tile reply-image__btn" data-img-src="${resolveMediaUrl(fn)}" data-telegram-url="${replyTelegramUrl}"><img src="${resolveMediaUrl(fn)}" alt="图片" loading="lazy"></div></div>`
                     : ''
             ).join('');
         }
@@ -297,6 +303,7 @@ export function createMessageHtml(message, index, searchValue) {
                 gap:       1,
                 maxHeight: DEFAULT_MAX_IMG_HEIGHT,
                 hasReaction: hasReaction,
+                telegramUrl,
             });
         }, 0);
     }
@@ -361,7 +368,12 @@ export function createMessageHtml(message, index, searchValue) {
         hasImage = '';
     } 
 
-    const telegramUrl = chatUsername ? `https://t.me/${chatUsername}/${message.msg_id ?? ''}` : `https://t.me/c/${message.chat_id}/${message.msg_id ?? ''}`;
+    const repliesNum = Number(message.replies_num ?? 0) || 0;
+    const repliesBadgeHtml = repliesNum > 0 && message.msg_id != null
+        ? `<span class="replies-badge" role="button" tabindex="0" data-reply-to-msg-id="${message.msg_id}" title="查看回复">
+        ${repliesNum}
+        <svg t="1769777258787" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2530" width="12" height="12"><path d="M356.650667 155.008q17.322667 0 29.994667 12.501333t12.672 30.165333-12.672 30.336l-198.656 198.656 409.344 0q77.994667 0 149.162667 30.336t122.496 81.834667 81.834667 122.496 30.506667 149.333333l0 42.666667q0 17.664-12.501333 30.165333t-30.165333 12.501333q-17.322667 0-29.994667-12.672t-12.672-29.994667l0-42.666667q0-60.672-23.68-116.010667t-63.658667-95.317333-95.317333-63.658667-116.010667-23.68l-409.344 0 198.656 198.997333q12.672 12.672 12.672 29.994667 0 17.664-12.501333 30.336t-30.165333 12.672-30.336-12.672l-271.317333-271.658667q-12.330667-12.330667-12.330667-30.336 0-17.664 12.330667-29.994667l271.317333-271.658667q12.672-12.672 30.336-12.672z" p-id="2531" fill="#dbdbdb"></path></svg>        </span>`
+        : '';
 
     // 6. 拼接整体
     return `
@@ -374,7 +386,7 @@ export function createMessageHtml(message, index, searchValue) {
           ${message.msg ? `<div class="msg">${messageContent}</div>` : ''}
           ${ogHtml}
           ${reactionsHtml}
-          <div class="date ${position}">${message.date}</div>
+          <div class="date ${position}">${repliesBadgeHtml}<span class="date-text">${message.date}</span></div>
         </div>
         <div class="message-to-telegram ${position}" data-telegram-url="${telegramUrl}">
           <a href="${telegramUrl}" target="_blank" rel="noopener noreferrer"></a>

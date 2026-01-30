@@ -22,6 +22,35 @@ body {
     overflow-x: hidden;
 }
 
+.chat-toast {
+    position: fixed;
+    left: 16px;
+    right: 16px;
+    bottom: 22px;
+    z-index: 2000;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 13px;
+    backdrop-filter: blur(8px);
+    transform: translateY(12px);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease;
+}
+
+.chat-toast.chat-toast--show {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.chat-toast.chat-toast--error {
+    border-color: rgba(248, 113, 113, 0.35);
+    color: #fecaca;
+}
+
 .container {
     max-width: 1000px;
     width: 100%;
@@ -59,6 +88,23 @@ body {
     height: 37px;
 }
 
+#exitReplies {
+    margin-left: 10px;
+    background: #212121;
+    color: white;
+    border: none;
+    border-radius: .575rem;
+    cursor: pointer;
+    line-height: 16px;
+    height: 37px;
+    padding: 0 14px;
+    transition: all 0.2s;
+}
+
+#exitReplies:hover {
+    background: #111111;
+}
+
 #messages {
     padding: 50px 0 60px 0;
 }
@@ -68,7 +114,31 @@ body {
     color: #fff8;
     margin: .2rem 0;
     width: calc(100% - 10px);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.date-text {
+    margin-left: auto;
     text-align: right;
+}
+
+.replies-badge {
+    display: inline-flex;
+    align-items: center;
+    height: 22px;
+    padding: 0 10px;
+    border-radius: 999px;
+    font-size: 12px;
+    color: #fff;
+    user-select: none;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.replies-badge:hover {
+    background: rgb(111, 100, 185);
 }
 
 .user {
@@ -487,21 +557,7 @@ body {
     cursor: pointer;
 }
 
-.image-viewer__download {
-    position: absolute;
-    top: -12px;
-    left: -12px;
-    padding: 8px 12px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    background: rgba(0, 0, 0, 0.55);
-    color: #fff;
-    text-decoration: none;
-    font-size: 13px;
-}
-
-.image-viewer__close:hover,
-.image-viewer__download:hover {
+.image-viewer__close:hover {
     background: rgba(0, 0, 0, 0.72);
 }
 

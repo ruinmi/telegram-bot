@@ -95,6 +95,7 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
                 download_path,
                 '--skip-same',
                 '--continue',
+                '--takeout',
                 '-t',
                 '8',
                 '-l',

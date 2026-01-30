@@ -12,6 +12,7 @@
 </head>
 
 <body>
+    <div id="chatToast" class="chat-toast" role="status" aria-live="polite"></div>
     <div class="container">
         <div id="header">
             <input type="text" id="searchBox" placeholder="请输入日期或聊天内容进行搜索...">
@@ -20,6 +21,11 @@
             </select>
             <select id="reactionSelect" class="select-component" title="表情排序">
             </select>
+            <select id="repliesNumSelect" class="select-component" title="回复数排序">
+              <option value="">按回复数排序</option>
+              <option value="desc">回复数(高→低)</option>
+            </select>
+            <button id="exitReplies" class="hidden" title="返回聊天">返回</button>
         </div>
         <div id="topLoader" class="top-loader hidden" aria-hidden="true">
           <div class="top-loader__inner">

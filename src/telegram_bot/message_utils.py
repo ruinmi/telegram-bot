@@ -8,12 +8,21 @@ import re
 
 from .xunlei_cipher import is_xunlei_link_stale
 from .http_client import post as http_post
+from .paths import ME_ID_FILE
 
 def load_json(file_path: str) -> dict:
     """Load JSON data from a file."""
     with open(file_path, "r", encoding="utf-8") as infile:
         return json.load(infile)
 
+def load_me_id() -> str:
+    """Load the user's own Telegram ID from a file."""
+    try:
+        with open(ME_ID_FILE, "r", encoding="utf-8") as infile:
+            me_id = infile.read().strip()
+            return me_id
+    except Exception:
+        return ""
 
 def convert_timestamp_to_date(timestamp: int, tz) -> str:
     """Convert unix timestamp to formatted date string."""
@@ -85,6 +94,7 @@ def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | Non
     filtered_messages = filter_messages(raw_messages)
     logger.info(f'{len(raw_messages)} messages before filtering, {len(filtered_messages)} after filtering')
 
+    me_id = load_me_id()
     for raw_message in filtered_messages:
         msg_text = raw_message.get("text", "")
         msg_id = raw_message.get("id", None)
@@ -97,8 +107,25 @@ def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | Non
         from_id = raw_data.get("FromID") or {}
         user_id = from_id.get('UserID', '') if isinstance(from_id, dict) else ''
         reply_to_msg_id = (raw_data.get('ReplyTo') or {}).get('ReplyToMsgID', 0)
+        reply_to_top_id = (raw_data.get('ReplyTo') or {}).get('ReplyToTopID', 0)
+        try:
+            reply_to_msg_id = int(reply_to_msg_id or 0)
+        except Exception:
+            reply_to_msg_id = 0
+        try:
+            reply_to_top_id = int(reply_to_top_id or 0)
+        except Exception:
+            reply_to_top_id = 0
+
+        replies_num = raw_data.get('Replies')
+        if isinstance(replies_num, dict):
+            replies_num = replies_num.get('Replies', 0)
+        try:
+            replies_num = int(replies_num or 0)
+        except Exception:
+            replies_num = 0
         reactions = raw_data.get('Reactions') or {}
-        user = '我' if user_id else ''
+        user = '我' if user_id == me_id else user_id
 
         message = {
             'date': date,
@@ -109,6 +136,8 @@ def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | Non
             'user': user,
             'msg': msg_text,
             'reply_to_msg_id': reply_to_msg_id,
+            'reply_to_top_id': reply_to_top_id,
+            'replies_num': replies_num,
             'reactions': reactions,
             'ori_height': raw_message.get('ori_height'),
             'ori_width': raw_message.get('ori_width'),

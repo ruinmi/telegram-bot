@@ -10,6 +10,7 @@ let allMessages = [];
 const overlay = document.getElementById('overlay');
 overlay.classList.remove('hidden');
 const topLoader = document.getElementById('topLoader');
+const toastEl = document.getElementById('chatToast');
 const chatId = window.CHAT_ID;
 const pageSize = 20;
 let searchGapCounter = 0;
@@ -35,6 +36,20 @@ function nextFrame() {
     return new Promise(resolve => requestAnimationFrame(resolve));
 }
 
+let _toastTimer = null;
+function showToast(message, variant = 'info') {
+    if (!toastEl) return;
+    toastEl.textContent = String(message ?? '');
+    toastEl.classList.remove('chat-toast--error', 'chat-toast--show');
+    if (variant === 'error') toastEl.classList.add('chat-toast--error');
+    void toastEl.offsetWidth;
+    toastEl.classList.add('chat-toast--show');
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(() => {
+        toastEl.classList.remove('chat-toast--show');
+    }, 2600);
+}
+
 function isInViewport(el, margin = 200) {
     if (!el) return false;
     const rect = el.getBoundingClientRect();
@@ -56,8 +71,7 @@ function ensureImageViewer() {
       <div class="image-viewer__backdrop" data-action="close"></div>
       <div class="image-viewer__content" role="dialog" aria-modal="true">
         <button type="button" class="image-viewer__close" data-action="close" aria-label="关闭">×</button>
-        <a class="image-viewer__download" data-role="download" download target="_blank" rel="noopener">下载</a>
-        <img class="image-viewer__img" data-role="img" alt="图片预览" />
+        <img class="image-viewer__img" data-action="close" data-role="img" alt="图片预览" />
       </div>
     `;
     document.body.appendChild(root);
@@ -82,8 +96,7 @@ function ensureImageViewer() {
     _imageViewer = {
         root,
         img,
-        close,
-        downloadLink: root.querySelector('[data-role="download"]'),
+        close
     };
     return _imageViewer;
 }
@@ -95,7 +108,6 @@ function openImageViewer(url) {
     viewer.img.dataset.fallbackApplied = '0';
     viewer.img.classList.remove('img-broken');
     viewer.img.src = src;
-    viewer.downloadLink.href = src;
     viewer.root.classList.remove('hidden');
     document.body.classList.add('no-scroll');
 }
@@ -153,6 +165,124 @@ function fetchMessagesByReaction(emoticon, offset, limit) {
         });
 }
 
+function fetchRepliesMessages(replyToMsgId, offset, limit) {
+    return fetch(`../replies/${chatId}/${encodeURIComponent(replyToMsgId)}?offset=${offset}&limit=${limit}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('无法加载 replies 列表');
+            }
+            return response.json();
+        });
+}
+
+function fetchMessagesByRepliesNum(offset, limit) {
+    return fetch(`../messages_by_replies_num/${chatId}?offset=${offset}&limit=${limit}`)
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('无法加载 replies_num 排序消息');
+            }
+            return response.json();
+        });
+}
+
+async function downloadTelegramMediaForTile(tile) {
+    if (!tile || tile.classList.contains('img-downloading')) return;
+
+    const expectedUrl = tile.dataset?.imgSrc;
+    if (!expectedUrl || !String(expectedUrl).startsWith('/downloads/')) {
+        showToast('缺少 img_src，无法下载。', 'error');
+        return;
+    }
+
+    function deriveTelegramUrlFromImgSrc(imgSrc) {
+        const raw = String(imgSrc || '');
+        const noQuery = raw.split('#')[0].split('?')[0];
+        const parts = noQuery.split('/').filter(Boolean);
+        if (parts.length === 0) return '';
+
+        const filename = parts[parts.length - 1];
+        const chunks = filename.split('_');
+        if (chunks.length < 2) return '';
+        const msgId = Number(chunks[1]);
+        if (!Number.isFinite(msgId)) return '';
+
+        const username = (window.CHAT_USERNAME || '').trim();
+        if (username) return `https://t.me/${username}/${msgId}`;
+        return `https://t.me/c/${chatId}/${msgId}`;
+    }
+
+    const messageEl = tile.closest('.message');
+    const tiles = messageEl
+        ? Array.from(messageEl.querySelectorAll('.img-tile[data-img-src]'))
+        : [tile];
+
+    const targets = tiles
+        .map(t => {
+            const img = t.querySelector('img');
+            const imgSrc = t.dataset?.imgSrc;
+            if (!img || !imgSrc || !String(imgSrc).startsWith('/downloads/')) return null;
+            if (!img.classList.contains('img-broken')) return null;
+            const telegramUrl = deriveTelegramUrlFromImgSrc(imgSrc);
+            if (!telegramUrl) return null;
+            return { tile: t, telegramUrl, expectedUrl: imgSrc };
+        })
+        .filter(Boolean);
+
+    if (targets.length === 0) {
+        showToast('没有需要下载的图片。', 'error');
+        return;
+    }
+
+    for (const t of targets) {
+        t.tile.classList.add('img-downloading');
+    }
+    try {
+        const res = await fetch(`../download_telegram_media`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                chat_id: chatId,
+                telegram_urls: targets.map(t => t.telegramUrl),
+                expected_urls: targets.map(t => t.expectedUrl),
+            }),
+        });
+        const data = await res.json().catch(() => ({}));
+        const mediaUrls = Array.isArray(data?.media_urls) ? data.media_urls : [];
+        if (!res.ok || !data || data.ok !== true || mediaUrls.length === 0) {
+            showToast('下载失败，请稍后重试。', 'error');
+            return;
+        }
+
+        const mapByExpected = new Map(
+            mediaUrls
+                .filter(it => it && it.expected_url && it.media_url)
+                .map(it => [String(it.expected_url), String(it.media_url)])
+        );
+
+        const now = Date.now();
+        for (const t of targets) {
+            const mediaUrl = mapByExpected.get(String(t.expectedUrl));
+            if (!mediaUrl) continue;
+            t.tile.dataset.imgSrc = mediaUrl;
+            const img = t.tile.querySelector('img');
+            if (img) {
+                img.dataset.fallbackApplied = '0';
+                img.classList.remove('img-broken');
+                const bust = mediaUrl.includes('?') ? `&v=${now}` : `?v=${now}`;
+                img.src = mediaUrl + bust;
+            }
+        }
+
+        showToast('已重新下载图片。');
+    } catch (e) {
+        showToast('下载失败，请稍后重试。', 'error');
+    } finally {
+        for (const t of targets) {
+            t.tile.classList.remove('img-downloading');
+        }
+    }
+}
+
 function resetReactionSortingState() {
     isReactionSorting = false;
     reactionEmoticon = '';
@@ -161,16 +291,156 @@ function resetReactionSortingState() {
     isLoadingReactionMessages = false;
 }
 
+function resetRepliesNumSortingState() {
+    isRepliesNumSorting = false;
+    repliesNumOffset = 0;
+    repliesNumTotal = 0;
+    isLoadingRepliesNumMessages = false;
+}
+
+let isRepliesViewing = false;
+let repliesToMsgId = null;
+let repliesOldestOffset = 0;
+let repliesTotal = 0;
+let isLoadingRepliesMessages = false;
+
+let isRepliesNumSorting = false;
+let repliesNumOffset = 0;
+let repliesNumTotal = 0;
+let isLoadingRepliesNumMessages = false;
+
+let _previousViewState = null;
+
+function resetRepliesViewState() {
+    isRepliesViewing = false;
+    repliesToMsgId = null;
+    repliesOldestOffset = 0;
+    repliesTotal = 0;
+    isLoadingRepliesMessages = false;
+    const btn = document.getElementById('exitReplies');
+    if (btn) btn.classList.add('hidden');
+}
+
+function _snapshotCurrentViewState(focusMsgId) {
+    const reactionSelect = document.getElementById('reactionSelect');
+    const repliesNumSelect = document.getElementById('repliesNumSelect');
+    const searchBox = document.getElementById('searchBox');
+    return {
+        focusMsgId: focusMsgId ?? null,
+        html: messagesContainer.innerHTML,
+        scrollY: window.scrollY,
+        isSearching,
+        searchQuery,
+        searchOldestOffset,
+        searchTotal,
+        isReactionSorting,
+        reactionEmoticon,
+        reactionOffset,
+        reactionTotal,
+        isRepliesNumSorting,
+        repliesNumOffset,
+        repliesNumTotal,
+        oldestIndex,
+        totalMessages,
+        latestChatMsgId,
+        allMessages,
+        currentStartIndex,
+        ui: {
+            reactionSelectValue: reactionSelect ? reactionSelect.value : '',
+            repliesNumSelectValue: repliesNumSelect ? repliesNumSelect.value : '',
+            searchBoxValue: searchBox ? searchBox.value : '',
+        }
+    };
+}
+
+async function _restorePreviousViewState() {
+    if (!_previousViewState) return false;
+    const state = _previousViewState;
+    _previousViewState = null;
+
+    resetRepliesViewState();
+
+    messagesContainer.innerHTML = state.html || '';
+    isSearching = !!state.isSearching;
+    searchQuery = state.searchQuery || '';
+    searchOldestOffset = Number(state.searchOldestOffset ?? 0);
+    searchTotal = Number(state.searchTotal ?? 0);
+    isLoadingSearchMessages = false;
+    isReactionSorting = !!state.isReactionSorting;
+    reactionEmoticon = state.reactionEmoticon || '';
+    reactionOffset = Number(state.reactionOffset ?? 0);
+    reactionTotal = Number(state.reactionTotal ?? 0);
+    isLoadingReactionMessages = false;
+    isRepliesNumSorting = !!state.isRepliesNumSorting;
+    repliesNumOffset = Number(state.repliesNumOffset ?? 0);
+    repliesNumTotal = Number(state.repliesNumTotal ?? 0);
+    isLoadingRepliesNumMessages = false;
+    oldestIndex = Number(state.oldestIndex ?? 0);
+    totalMessages = Number(state.totalMessages ?? 0);
+    latestChatMsgId = state.latestChatMsgId ?? null;
+    allMessages = Array.isArray(state.allMessages) ? state.allMessages : [];
+    currentStartIndex = Number(state.currentStartIndex ?? allMessages.length);
+    isLoadingOlderMessages = false;
+
+    const reactionSelect = document.getElementById('reactionSelect');
+    if (reactionSelect) reactionSelect.value = state.ui?.reactionSelectValue ?? '';
+    const repliesNumSelect = document.getElementById('repliesNumSelect');
+    if (repliesNumSelect) repliesNumSelect.value = state.ui?.repliesNumSelectValue ?? '';
+    const searchBox = document.getElementById('searchBox');
+    if (searchBox) searchBox.value = state.ui?.searchBoxValue ?? '';
+
+    await nextTick();
+    await waitForMediaToLoad();
+
+    if (state.focusMsgId != null) {
+        const el = messagesContainer.querySelector(`.message[data-msg-id="${state.focusMsgId}"]`);
+        if (el) {
+            el.scrollIntoView({ block: 'center' });
+            nextTick()
+                .then(() => waitForMediaToLoad())
+                .then(() => el.scrollIntoView({ block: 'center' }))
+                .catch(() => { });
+            return true;
+        }
+    }
+
+    const scrollY = Number(state.scrollY ?? 0);
+    if (Number.isFinite(scrollY)) {
+        window.scrollTo(0, scrollY);
+        return true;
+    }
+    return false;
+}
+
+function exitRepliesView() {
+    if (!isRepliesViewing) return;
+    _restorePreviousViewState()
+        .catch(() => {
+            resetRepliesViewState();
+            messagesContainer.innerHTML = '';
+            overlay.classList.remove('hidden');
+            loadMessages();
+        });
+}
+
 function setReactionSorting(emoticon) {
     const picked = (emoticon || '').trim();
     if (!picked) {
         resetReactionSortingState();
+        resetRepliesViewState();
+        resetRepliesNumSortingState();
+        const repliesNumSelect = document.getElementById('repliesNumSelect');
+        if (repliesNumSelect) repliesNumSelect.value = '';
         messagesContainer.innerHTML = '';
         loadMessages();
         return;
     }
 
     isSearching = false;
+    resetRepliesViewState();
+    resetRepliesNumSortingState();
+    const repliesNumSelect = document.getElementById('repliesNumSelect');
+    if (repliesNumSelect) repliesNumSelect.value = '';
     isReactionSorting = true;
     reactionEmoticon = picked;
     reactionOffset = 0;
@@ -220,6 +490,212 @@ async function loadMoreReactionMessages(isInitial = false) {
         isLoadingReactionMessages = false;
         if (isInitial) overlay.classList.add('hidden');
     }
+}
+
+function setRepliesNumSorting(modeValue) {
+    const picked = (modeValue || '').trim();
+    if (!picked) {
+        resetRepliesNumSortingState();
+        resetRepliesViewState();
+        messagesContainer.innerHTML = '';
+        loadMessages();
+        return;
+    }
+
+    if (isRepliesViewing) {
+        _previousViewState = null;
+        resetRepliesViewState();
+    }
+
+    if (isReactionSorting) {
+        resetReactionSortingState();
+        const reactionSelect = document.getElementById('reactionSelect');
+        if (reactionSelect) reactionSelect.value = '';
+    }
+
+    if (isSearching) {
+        isSearching = false;
+        searchQuery = '';
+        searchOldestOffset = 0;
+        searchTotal = 0;
+        isLoadingSearchMessages = false;
+        updateSearchMoreResultsButton();
+        const searchBox = document.getElementById('searchBox');
+        if (searchBox) searchBox.value = '';
+    }
+
+    isRepliesNumSorting = true;
+    repliesNumOffset = 0;
+    repliesNumTotal = 0;
+    isLoadingRepliesNumMessages = false;
+    messagesContainer.innerHTML = '';
+    overlay.classList.remove('hidden');
+    loadMoreRepliesNumMessages(true);
+}
+
+async function loadMoreRepliesNumMessages(isInitial = false) {
+    if (!isRepliesNumSorting || isLoadingRepliesNumMessages) return;
+    if (!isInitial && repliesNumTotal > 0 && repliesNumOffset >= repliesNumTotal) return;
+
+    isLoadingRepliesNumMessages = true;
+    try {
+        const data = await fetchMessagesByRepliesNum(repliesNumOffset, pageSize);
+        repliesNumTotal = data.total || 0;
+        const batch = Array.isArray(data.messages) ? data.messages : [];
+        if (batch.length === 0) return;
+
+        repliesNumOffset += batch.length;
+
+        const ordered = batch.slice().reverse();
+        let html = '';
+        for (const m of ordered) {
+            html += createMessageHtml(m, m.msg_id, '');
+        }
+
+        if (isInitial) {
+            messagesContainer.innerHTML = html;
+            await nextTick();
+            await waitForMediaToLoad();
+            window.scrollTo(0, document.body.scrollHeight);
+        } else {
+            const prevHeight = document.body.scrollHeight;
+            messagesContainer.insertAdjacentHTML('afterbegin', html);
+            await nextTick();
+            await waitForMediaToLoad();
+            const newHeight = document.body.scrollHeight;
+            window.scrollTo(0, window.scrollY + (newHeight - prevHeight));
+        }
+    } catch (error) {
+        console.error('加载 replies_num 排序消息失败:', error);
+    } finally {
+        isLoadingRepliesNumMessages = false;
+        if (isInitial) overlay.classList.add('hidden');
+    }
+}
+
+async function setRepliesView(targetMsgId) {
+    const mid = Number(targetMsgId);
+    if (!Number.isFinite(mid)) return;
+
+    if (isRepliesViewing && repliesToMsgId === mid) {
+        exitRepliesView();
+        return;
+    }
+
+    if (!isRepliesViewing) {
+        _previousViewState = _snapshotCurrentViewState(mid);
+    }
+
+    if (isReactionSorting) {
+        resetReactionSortingState();
+        const reactionSelect = document.getElementById('reactionSelect');
+        if (reactionSelect) reactionSelect.value = '';
+    }
+
+    if (isRepliesNumSorting) {
+        resetRepliesNumSortingState();
+        const repliesNumSelect = document.getElementById('repliesNumSelect');
+        if (repliesNumSelect) repliesNumSelect.value = '';
+    }
+
+    if (isSearching) {
+        isSearching = false;
+        searchQuery = '';
+        searchOldestOffset = 0;
+        searchTotal = 0;
+        isLoadingSearchMessages = false;
+        updateSearchMoreResultsButton();
+        const searchBox = document.getElementById('searchBox');
+        if (searchBox) searchBox.value = '';
+    }
+
+    isRepliesViewing = true;
+    repliesToMsgId = mid;
+    repliesOldestOffset = 0;
+    repliesTotal = 0;
+    isLoadingRepliesMessages = false;
+
+    const btn = document.getElementById('exitReplies');
+    if (btn) btn.classList.remove('hidden');
+
+    messagesContainer.innerHTML = '';
+    overlay.classList.remove('hidden');
+    try {
+        const data = await fetchRepliesMessages(mid, -pageSize, pageSize);
+        const batch = Array.isArray(data.messages) ? data.messages : [];
+        repliesOldestOffset = Number(data.offset ?? 0);
+        repliesTotal = Number(data.total ?? 0);
+
+        const frag = document.createDocumentFragment();
+        for (const m of batch) {
+            const idx = (m.msg_id ?? Math.random());
+            const el = htmlToElement(createMessageHtml(m, idx, ''));
+            if (el) frag.appendChild(el);
+        }
+        messagesContainer.innerHTML = '';
+        messagesContainer.appendChild(frag);
+
+        await nextTick();
+        await waitForMediaToLoad();
+        window.scrollTo(0, document.body.scrollHeight);
+    } catch (error) {
+        console.error('加载 replies 列表失败:', error);
+    } finally {
+        overlay.classList.add('hidden');
+    }
+}
+
+async function loadOlderRepliesMessages() {
+    if (!isRepliesViewing || isLoadingRepliesMessages) return;
+    if (repliesOldestOffset <= 0) return;
+
+    isLoadingRepliesMessages = true;
+    showTopLoader();
+
+    const anchorEl = messagesContainer.querySelector('.message') || messagesContainer.firstElementChild;
+    const anchorTop = anchorEl ? anchorEl.getBoundingClientRect().top : null;
+
+    try {
+        const newOffset = Math.max(0, repliesOldestOffset - pageSize);
+        const count = repliesOldestOffset - newOffset;
+        const data = await fetchRepliesMessages(repliesToMsgId, newOffset, count);
+        const batch = Array.isArray(data.messages) ? data.messages : [];
+        repliesOldestOffset = Number(data.offset ?? newOffset);
+        repliesTotal = Number(data.total ?? repliesTotal);
+
+        if (batch.length > 0) {
+            const frag = document.createDocumentFragment();
+            for (const m of batch) {
+                const idx = (m.msg_id ?? Math.random());
+                const el = htmlToElement(createMessageHtml(m, idx, ''));
+                if (el) frag.appendChild(el);
+            }
+            messagesContainer.insertBefore(frag, messagesContainer.firstChild);
+        }
+    } catch (error) {
+        console.error('加载旧 replies 失败:', error);
+    } finally {
+        isLoadingRepliesMessages = false;
+        hideTopLoader();
+
+        if (anchorEl && anchorTop !== null) {
+            await new Promise((resolve) => requestAnimationFrame(resolve));
+            const newTop = anchorEl.getBoundingClientRect().top;
+            window.scrollBy(0, newTop - anchorTop);
+            nextTick()
+                .then(() => waitForMediaToLoad())
+                .then(() => {
+                    const topAfterMedia = anchorEl.getBoundingClientRect().top;
+                    window.scrollBy(0, topAfterMedia - anchorTop);
+                })
+                .catch(() => { });
+        }
+    }
+}
+
+function loadOlderRepliesMessagesWithScrollAdjustment() {
+    if (isLoadingRepliesMessages) return;
+    loadOlderRepliesMessages();
 }
 
 function loadMessages() {
@@ -453,6 +929,14 @@ let debounceTimer;
 function checkScroll() {
     clearTimeout(debounceTimer);
     debounceTimer = setTimeout(function () {
+        if (isRepliesViewing && window.scrollY < 50) {
+            loadOlderRepliesMessagesWithScrollAdjustment();
+            return;
+        }
+        if (isRepliesNumSorting && window.scrollY < 50) {
+            loadMoreRepliesNumMessages(false);
+            return;
+        }
         if (isReactionSorting && window.scrollY < 50) {
             loadMoreReactionMessages(false);
             return;
@@ -461,7 +945,7 @@ function checkScroll() {
             loadOlderSearchMessagesWithScrollAdjustment();
             return;
         }
-        if (!isSearching && !isReactionSorting && window.scrollY < 50 && oldestIndex > 0) {
+        if (!isSearching && !isReactionSorting && !isRepliesNumSorting && !isRepliesViewing && window.scrollY < 50 && oldestIndex > 0) {
             loadOlderMessagesWithScrollAdjustment();
         }
     }, 200);
@@ -476,6 +960,9 @@ function searchMessages() {
         const reactionSelect = document.getElementById('reactionSelect');
         if (reactionSelect) reactionSelect.value = '';
         resetReactionSortingState();
+    }
+    if (isRepliesViewing) {
+        resetRepliesViewState();
     }
     const searchValue = document.getElementById('searchBox').value.trim().toLowerCase();
     if (!searchValue) {
@@ -645,14 +1132,45 @@ if (reactionSelectEl) {
     });
 }
 
+const repliesNumSelectEl = document.getElementById('repliesNumSelect');
+if (repliesNumSelectEl) {
+    repliesNumSelectEl.addEventListener('change', function () {
+        setRepliesNumSorting(this.value);
+    });
+}
+
 
 document.addEventListener('click', (event) => {
     const tile = event.target.closest('.img-tile[data-img-src]');
     if (!tile) return;
     event.preventDefault();
     event.stopPropagation();
+    const img = tile.querySelector('img');
+    if (img?.classList?.contains('img-broken') && String(tile.dataset?.imgSrc || '').startsWith('/downloads/')) {
+        downloadTelegramMediaForTile(tile);
+        return;
+    }
     openImageViewer(tile.dataset.imgSrc);
 });
+
+document.addEventListener('click', (event) => {
+    const badge = event.target.closest('.replies-badge[data-reply-to-msg-id]');
+    if (!badge) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setRepliesView(badge.dataset.replyToMsgId);
+});
+
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && isRepliesViewing) {
+        exitRepliesView();
+    }
+});
+
+const exitRepliesBtn = document.getElementById('exitReplies');
+if (exitRepliesBtn) {
+    exitRepliesBtn.addEventListener('click', () => exitRepliesView());
+}
 
 // 点击气泡之外的“整行背景”区域：打开 Telegram 对应消息
 document.addEventListener('click', (event) => {

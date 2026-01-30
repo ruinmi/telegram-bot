@@ -80,6 +80,39 @@
     -webkit-tap-highlight-color: transparent;
 }
 
+.img-tile.img-downloading {
+    cursor: progress;
+}
+
+.img-tile.img-downloading::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.35);
+    z-index: 2;
+}
+
+.img-tile.img-downloading::after {
+    content: "";
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    left: 50%;
+    top: 50%;
+    margin-left: -13px;
+    margin-top: -13px;
+    border: 3px solid rgba(255, 255, 255, 0.25);
+    border-top-color: rgba(255, 255, 255, 0.9);
+    border-radius: 50%;
+    animation: img-tile-spin 0.9s linear infinite;
+    z-index: 3;
+}
+
+@keyframes img-tile-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
 .img-tile img {
     width: 100%;
     height: 100%;

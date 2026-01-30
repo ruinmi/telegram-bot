@@ -24,7 +24,7 @@ from telegram_bot.db_utils import get_connection, get_db_path
 from telegram_bot.message_utils import is_ali_link_stale, is_quark_link_stale
 from telegram_bot.paths import BASE_DIR, DOWNLOADS_DIR, STATIC_DIR, TEMPLATES_DIR, ensure_runtime_dirs
 from telegram_bot.project_logger import get_logger
-from telegram_bot.update_messages import redownload_chat_files
+from telegram_bot.update_messages import _run_tdl_command, redownload_chat_files
 from telegram_bot.xunlei_cipher import is_xunlei_link_stale
 
 ensure_runtime_dirs()
@@ -84,6 +84,14 @@ class ExecuteSqlRequest(BaseModel):
 class CleanupLinksRequest(BaseModel):
     chat_id: str
     providers: list[str] | None = None
+
+
+class DownloadTelegramMediaRequest(BaseModel):
+    chat_id: str
+    telegram_url: str | None = None
+    telegram_urls: list[str] | None = None
+    expected_url: str | None = None
+    expected_urls: list[str] | None = None
 
 
 def _json_error(status_code: int, message: str) -> JSONResponse:
@@ -256,6 +264,18 @@ def row_to_message(row):
             item["reactions"] = json.loads(item["reactions"])
         except Exception:
             item["reactions"] = None
+    if item.get("replies_num") is None:
+        item["replies_num"] = 0
+    try:
+        item["replies_num"] = int(item["replies_num"] or 0)
+    except Exception:
+        item["replies_num"] = 0
+    if item.get("reply_to_top_id") is None:
+        item["reply_to_top_id"] = 0
+    try:
+        item["reply_to_top_id"] = int(item["reply_to_top_id"] or 0)
+    except Exception:
+        item["reply_to_top_id"] = 0
     return item
 
 
@@ -859,6 +879,165 @@ def delete_chat(payload: ChatIdRequest):
     return {"deleted": deleted, "removed_data": removed_data, "removed_downloads": removed_downloads}
 
 
+@app.post("/download_telegram_media")
+def download_telegram_media(payload: DownloadTelegramMediaRequest):
+    chat_id = str(payload.chat_id or "").strip()
+    expected_url = (str(payload.expected_url).strip() if payload.expected_url is not None else None) or None
+
+    if not chat_id:
+        return _json_error(400, "chat_id required")
+
+    telegram_urls: list[str] = []
+    if payload.telegram_urls:
+        telegram_urls.extend([str(u or "").strip() for u in payload.telegram_urls if str(u or "").strip()])
+    if payload.telegram_url:
+        single = str(payload.telegram_url or "").strip()
+        if single:
+            telegram_urls.append(single)
+
+    expected_urls: list[str] = []
+    if payload.expected_urls:
+        expected_urls.extend([str(u or "").strip() for u in payload.expected_urls if str(u or "").strip()])
+    if expected_url:
+        expected_urls.append(expected_url)
+
+    # de-dupe while keeping order
+    seen: set[str] = set()
+    telegram_urls = [u for u in telegram_urls if not (u in seen or seen.add(u))]
+
+    if not telegram_urls:
+        return _json_error(400, "telegram_url(s) required")
+
+    chats = load_chats()
+    chat = next((c for c in chats if str(c.get("id")) == chat_id), None)
+    remark = chat.get("remark") if isinstance(chat, dict) else None
+    dl_logger = get_logger(remark or chat_id)
+
+    download_dir = Path(BASE_DIR) / "downloads" / chat_id
+    download_dir.mkdir(parents=True, exist_ok=True)
+
+    base_downloads = (Path(BASE_DIR) / "downloads").resolve()
+
+    def _expected_fs_from_url(url: str) -> Path | None:
+        if not url or not url.startswith("/downloads/"):
+            return None
+        relative = url[len("/downloads/") :]
+        fs = (Path(BASE_DIR) / "downloads" / relative).resolve()
+        if not fs.is_relative_to(base_downloads):
+            return None
+        return fs
+
+    expected_pairs: list[tuple[str, Path]] = []
+    for url in expected_urls:
+        fs = _expected_fs_from_url(url)
+        if fs is not None:
+            expected_pairs.append((url, fs))
+
+    if expected_pairs and all(fs.is_file() for _, fs in expected_pairs):
+        return {"ok": True, "media_urls": [{"expected_url": u, "media_url": u, "already_exists": True} for u, _ in expected_pairs]}
+
+    before_names: set[str] = set()
+    try:
+        before_names = {p.name for p in download_dir.iterdir() if p.is_file()}
+    except Exception:
+        before_names = set()
+
+    cmd = ["tdl", "dl"]
+    for u in telegram_urls:
+        cmd.extend(["-u", u])
+    cmd.extend(
+        [
+            "-d",
+            str(download_dir),
+            "--skip-same",
+            "--continue",
+            "-t",
+            "4",
+            "-l",
+            "4",
+        ]
+    )
+
+    result = _run_tdl_command(cmd, dl_logger, label="tdl dl (by url)")
+
+    if result.returncode != 0:
+        return JSONResponse(
+            status_code=500,
+            content={"ok": False, "error": "download failed"},
+        )
+
+    after_files: list[Path] = []
+    try:
+        after_files = [p for p in download_dir.iterdir() if p.is_file()]
+    except Exception:
+        after_files = []
+
+    new_files = [p for p in after_files if p.name not in before_names]
+
+    def _extract_tokens(stem: str) -> set[str]:
+        parts = [p for p in re.split(r"[^0-9A-Za-z]+", stem) if p]
+        tokens = {p for p in parts if len(p) >= 6}
+        return tokens
+
+    def _score_match(expected_fs: Path, candidate: Path) -> int:
+        if expected_fs.suffix.lower() != candidate.suffix.lower():
+            return -1
+        exp_tokens = _extract_tokens(expected_fs.stem)
+        cand_tokens = _extract_tokens(candidate.stem)
+        score = len(exp_tokens.intersection(cand_tokens))
+        # Prefer candidates that contain msg_id in name if present (2nd underscore chunk).
+        try:
+            msg_id = expected_fs.stem.split("_")[1]
+            if msg_id and msg_id in candidate.stem:
+                score += 3
+        except Exception:
+            pass
+        return score
+
+    assigned: dict[Path, Path] = {}  # expected_fs -> source file
+    remaining = list(new_files)
+
+    # Greedy: best scoring match per expected.
+    for _, exp_fs in expected_pairs:
+        if exp_fs.is_file():
+            continue
+        best = None
+        best_score = -1
+        for cand in remaining:
+            s = _score_match(exp_fs, cand)
+            if s > best_score:
+                best_score = s
+                best = cand
+        if best is not None and best_score >= 0:
+            assigned[exp_fs] = best
+            remaining = [p for p in remaining if p != best]
+
+    renamed: list[dict] = []
+    for exp_fs, src in assigned.items():
+        try:
+            exp_fs.parent.mkdir(parents=True, exist_ok=True)
+            src.replace(exp_fs)
+            renamed.append({"to": exp_fs.name, "from": src.name})
+        except Exception:
+            continue
+
+    media_urls: list[dict] = []
+    for exp_url, exp_fs in expected_pairs:
+        if exp_fs.is_file():
+            media_urls.append({"expected_url": exp_url, "media_url": exp_url})
+
+    if not expected_pairs:
+        # Fallback: expose any new files if caller didn't provide expected_urls.
+        for p in new_files:
+            try:
+                rel = p.resolve().relative_to(base_downloads)
+                media_urls.append({"expected_url": None, "media_url": "/downloads/" + rel.as_posix()})
+            except Exception:
+                continue
+
+    return {"ok": True, "media_urls": media_urls, "downloaded": [p.name for p in new_files], "renamed": renamed}
+
+
 @app.get("/messages/{chat_id}")
 def get_messages(
     chat_id: str,
@@ -891,8 +1070,10 @@ def get_messages(
                 m.ori_width,
                 m.og_info,
                 m.reactions,
+                m.replies_num,
                 m.msg_files,
                 m.reply_to_msg_id,
+                m.reply_to_top_id,
                 r.chat_id AS r_chat_id,
                 r.msg_id AS r_msg_id,
                 r.date AS r_date,
@@ -904,11 +1085,18 @@ def get_messages(
                 r.ori_width AS r_ori_width,
                 r.og_info AS r_og_info,
                 r.reactions AS r_reactions,
+                r.replies_num AS r_replies_num,
                 r.msg_files AS r_msg_files,
-                r.reply_to_msg_id AS r_reply_to_msg_id
+                r.reply_to_msg_id AS r_reply_to_msg_id,
+                r.reply_to_top_id AS r_reply_to_top_id
             FROM messages m
             LEFT JOIN messages r
-                ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+                ON r.chat_id = m.chat_id AND r.msg_id = (
+                    CASE
+                        WHEN COALESCE(m.reply_to_msg_id, 0) != 0 THEN m.reply_to_msg_id
+                        ELSE COALESCE(m.reply_to_top_id, 0)
+                    END
+                )
             WHERE m.chat_id=?
             ORDER BY m.msg_id
             LIMIT ? OFFSET ?
@@ -980,8 +1168,10 @@ def get_messages_between(
                 m.ori_width,
                 m.og_info,
                 m.reactions,
+                m.replies_num,
                 m.msg_files,
                 m.reply_to_msg_id,
+                m.reply_to_top_id,
                 r.chat_id AS r_chat_id,
                 r.msg_id AS r_msg_id,
                 r.date AS r_date,
@@ -993,11 +1183,18 @@ def get_messages_between(
                 r.ori_width AS r_ori_width,
                 r.og_info AS r_og_info,
                 r.reactions AS r_reactions,
+                r.replies_num AS r_replies_num,
                 r.msg_files AS r_msg_files,
-                r.reply_to_msg_id AS r_reply_to_msg_id
+                r.reply_to_msg_id AS r_reply_to_msg_id,
+                r.reply_to_top_id AS r_reply_to_top_id
             FROM messages m
             LEFT JOIN messages r
-                ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+                ON r.chat_id = m.chat_id AND r.msg_id = (
+                    CASE
+                        WHEN COALESCE(m.reply_to_msg_id, 0) != 0 THEN m.reply_to_msg_id
+                        ELSE COALESCE(m.reply_to_top_id, 0)
+                    END
+                )
             WHERE m.chat_id=? AND m.msg_id > ? AND m.msg_id < ?
             {order_sql}
             LIMIT ?
@@ -1046,8 +1243,10 @@ def get_message(chat_id: str, msg_id: int):
                 m.ori_width,
                 m.og_info,
                 m.reactions,
+                m.replies_num,
                 m.msg_files,
                 m.reply_to_msg_id,
+                m.reply_to_top_id,
                 r.chat_id AS r_chat_id,
                 r.msg_id AS r_msg_id,
                 r.date AS r_date,
@@ -1059,11 +1258,18 @@ def get_message(chat_id: str, msg_id: int):
                 r.ori_width AS r_ori_width,
                 r.og_info AS r_og_info,
                 r.reactions AS r_reactions,
+                r.replies_num AS r_replies_num,
                 r.msg_files AS r_msg_files,
-                r.reply_to_msg_id AS r_reply_to_msg_id
+                r.reply_to_msg_id AS r_reply_to_msg_id,
+                r.reply_to_top_id AS r_reply_to_top_id
             FROM messages m
             LEFT JOIN messages r
-                ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+                ON r.chat_id = m.chat_id AND r.msg_id = (
+                    CASE
+                        WHEN COALESCE(m.reply_to_msg_id, 0) != 0 THEN m.reply_to_msg_id
+                        ELSE COALESCE(m.reply_to_top_id, 0)
+                    END
+                )
             WHERE m.chat_id=? AND m.msg_id=?
             """,
             (chat_id, msg_id),
@@ -1078,6 +1284,92 @@ def get_message(chat_id: str, msg_id: int):
             reply_raw = {k[2:]: v for k, v in raw.items() if k.startswith("r_")}
             message["reply_message"] = row_to_message(reply_raw)
         return message
+    finally:
+        conn.close()
+
+
+@app.get("/replies/{chat_id}/{msg_id}")
+def get_replies(
+    chat_id: str,
+    msg_id: int,
+    offset: int = Query(0),
+    limit: int = Query(20),
+):
+    conn = get_db(chat_id)
+    if not conn:
+        return {"total": 0, "offset": 0, "messages": []}
+
+    msg_id = int(msg_id)
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM messages WHERE chat_id=? AND (reply_to_msg_id=? OR reply_to_top_id=?)",
+            (chat_id, msg_id, msg_id),
+        )
+        total = int(cur.fetchone()[0])
+        if offset < 0:
+            offset = max(total + offset, 0)
+
+        offset = max(int(offset), 0)
+        limit = max(1, min(int(limit), 200))
+
+        cur.execute(
+            """
+            SELECT
+                m.chat_id,
+                m.msg_id,
+                m.date,
+                m.timestamp,
+                m.msg_file_name,
+                m.user,
+                m.msg,
+                m.ori_height,
+                m.ori_width,
+                m.og_info,
+                m.reactions,
+                m.replies_num,
+                m.msg_files,
+                m.reply_to_msg_id,
+                m.reply_to_top_id,
+                r.chat_id AS r_chat_id,
+                r.msg_id AS r_msg_id,
+                r.date AS r_date,
+                r.timestamp AS r_timestamp,
+                r.msg_file_name AS r_msg_file_name,
+                r.user AS r_user,
+                r.msg AS r_msg,
+                r.ori_height AS r_ori_height,
+                r.ori_width AS r_ori_width,
+                r.og_info AS r_og_info,
+                r.reactions AS r_reactions,
+                r.replies_num AS r_replies_num,
+                r.msg_files AS r_msg_files,
+                r.reply_to_msg_id AS r_reply_to_msg_id,
+                r.reply_to_top_id AS r_reply_to_top_id
+            FROM messages m
+            LEFT JOIN messages r
+                ON r.chat_id = m.chat_id AND r.msg_id = (
+                    CASE
+                        WHEN COALESCE(m.reply_to_msg_id, 0) != 0 THEN m.reply_to_msg_id
+                        ELSE COALESCE(m.reply_to_top_id, 0)
+                    END
+                )
+            WHERE m.chat_id=? AND (m.reply_to_msg_id=? OR m.reply_to_top_id=?)
+            ORDER BY m.msg_id
+            LIMIT ? OFFSET ?
+            """,
+            (chat_id, msg_id, msg_id, limit, offset),
+        )
+        rows = cur.fetchall()
+        messages = []
+        for row in rows:
+            raw = dict(row)
+            item = row_to_message({k: v for k, v in raw.items() if not k.startswith("r_")})
+            if raw.get("r_msg_id") is not None:
+                reply_raw = {k[2:]: v for k, v in raw.items() if k.startswith("r_")}
+                item["reply_message"] = row_to_message(reply_raw)
+            messages.append(item)
+        return {"total": total, "offset": offset, "messages": messages}
     finally:
         conn.close()
 
@@ -1159,8 +1451,10 @@ def get_messages_by_reaction(
                     m.ori_width,
                     m.og_info,
                     m.reactions,
+                    m.replies_num,
                     m.msg_files,
                     m.reply_to_msg_id,
+                    m.reply_to_top_id,
                     r.chat_id AS r_chat_id,
                     r.msg_id AS r_msg_id,
                     r.date AS r_date,
@@ -1172,11 +1466,18 @@ def get_messages_by_reaction(
                     r.ori_width AS r_ori_width,
                     r.og_info AS r_og_info,
                     r.reactions AS r_reactions,
+                    r.replies_num AS r_replies_num,
                     r.msg_files AS r_msg_files,
-                    r.reply_to_msg_id AS r_reply_to_msg_id
+                    r.reply_to_msg_id AS r_reply_to_msg_id,
+                    r.reply_to_top_id AS r_reply_to_top_id
                 FROM messages m
                 LEFT JOIN messages r
-                    ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+                    ON r.chat_id = m.chat_id AND r.msg_id = (
+                        CASE
+                            WHEN COALESCE(m.reply_to_msg_id, 0) != 0 THEN m.reply_to_msg_id
+                            ELSE COALESCE(m.reply_to_top_id, 0)
+                        END
+                    )
                 WHERE m.chat_id=? AND m.msg_id IN ({placeholders})
                 """,
                 (chat_id, *msg_ids),
@@ -1198,6 +1499,89 @@ def get_messages_by_reaction(
                     item["reply_message"] = row_to_message(reply_raw)
 
                 messages.append(item)
+        return {"total": total, "offset": offset, "messages": messages}
+    finally:
+        conn.close()
+
+
+@app.get("/messages_by_replies_num/{chat_id}")
+def get_messages_by_replies_num(
+    chat_id: str,
+    offset: int = Query(0),
+    limit: int = Query(20),
+):
+    conn = get_db(chat_id)
+    if not conn:
+        return {"total": 0, "offset": 0, "messages": []}
+
+    limit = max(1, min(int(limit), 100))
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT COUNT(*) FROM messages WHERE chat_id=? AND COALESCE(replies_num, 0) > 0",
+            (chat_id,),
+        )
+        total = int(cur.fetchone()[0])
+        if offset < 0:
+            offset = max(total + offset, 0)
+        offset = max(int(offset), 0)
+
+        cur.execute(
+            """
+            SELECT
+                m.chat_id,
+                m.msg_id,
+                m.date,
+                m.timestamp,
+                m.msg_file_name,
+                m.user,
+                m.msg,
+                m.ori_height,
+                m.ori_width,
+                m.og_info,
+                m.reactions,
+                m.replies_num,
+                m.msg_files,
+                m.reply_to_msg_id,
+                m.reply_to_top_id,
+                r.chat_id AS r_chat_id,
+                r.msg_id AS r_msg_id,
+                r.date AS r_date,
+                r.timestamp AS r_timestamp,
+                r.msg_file_name AS r_msg_file_name,
+                r.user AS r_user,
+                r.msg AS r_msg,
+                r.ori_height AS r_ori_height,
+                r.ori_width AS r_ori_width,
+                r.og_info AS r_og_info,
+                r.reactions AS r_reactions,
+                r.replies_num AS r_replies_num,
+                r.msg_files AS r_msg_files,
+                r.reply_to_msg_id AS r_reply_to_msg_id,
+                r.reply_to_top_id AS r_reply_to_top_id
+            FROM messages m
+            LEFT JOIN messages r
+                ON r.chat_id = m.chat_id AND r.msg_id = (
+                    CASE
+                        WHEN COALESCE(m.reply_to_msg_id, 0) != 0 THEN m.reply_to_msg_id
+                        ELSE COALESCE(m.reply_to_top_id, 0)
+                    END
+                )
+            WHERE m.chat_id=? AND COALESCE(m.replies_num, 0) > 0
+            ORDER BY COALESCE(m.replies_num, 0) DESC, m.timestamp DESC, m.msg_id DESC
+            LIMIT ? OFFSET ?
+            """,
+            (chat_id, limit, offset),
+        )
+        rows = cur.fetchall()
+        messages = []
+        for row in rows:
+            raw = dict(row)
+            item = row_to_message({k: v for k, v in raw.items() if not k.startswith("r_")})
+            if raw.get("r_msg_id") is not None:
+                reply_raw = {k[2:]: v for k, v in raw.items() if k.startswith("r_")}
+                item["reply_message"] = row_to_message(reply_raw)
+            messages.append(item)
 
         return {"total": total, "offset": offset, "messages": messages}
     finally:
@@ -1277,8 +1661,10 @@ def search_messages(
                 m.ori_width,
                 m.og_info,
                 m.reactions,
+                m.replies_num,
                 m.msg_files,
                 m.reply_to_msg_id,
+                m.reply_to_top_id,
                 r.chat_id AS r_chat_id,
                 r.msg_id AS r_msg_id,
                 r.date AS r_date,
@@ -1290,11 +1676,18 @@ def search_messages(
                 r.ori_width AS r_ori_width,
                 r.og_info AS r_og_info,
                 r.reactions AS r_reactions,
+                r.replies_num AS r_replies_num,
                 r.msg_files AS r_msg_files,
-                r.reply_to_msg_id AS r_reply_to_msg_id
+                r.reply_to_msg_id AS r_reply_to_msg_id,
+                r.reply_to_top_id AS r_reply_to_top_id
             FROM messages m
             LEFT JOIN messages r
-                ON r.chat_id = m.chat_id AND r.msg_id = m.reply_to_msg_id
+                ON r.chat_id = m.chat_id AND r.msg_id = (
+                    CASE
+                        WHEN COALESCE(m.reply_to_msg_id, 0) != 0 THEN m.reply_to_msg_id
+                        ELSE COALESCE(m.reply_to_top_id, 0)
+                    END
+                )
             WHERE m.chat_id=?{where_sql}
             ORDER BY m.msg_id
             LIMIT ? OFFSET ?

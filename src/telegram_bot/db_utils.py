@@ -24,8 +24,10 @@ def init_db(conn):
             ori_width INTEGER,
             og_info TEXT,
             reactions TEXT,
+            replies_num INTEGER DEFAULT 0,
             msg_files TEXT,
             reply_to_msg_id INTEGER,
+            reply_to_top_id INTEGER DEFAULT 0,
             PRIMARY KEY(chat_id, msg_id)
         )
     ''')
@@ -35,7 +37,22 @@ def init_db(conn):
             value TEXT
         )
     ''')
+    # Lightweight migrations for existing DBs.
+    try:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+        if "replies_num" not in cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN replies_num INTEGER DEFAULT 0")
+            conn.execute("UPDATE messages SET replies_num=0 WHERE replies_num IS NULL")
+        if "reply_to_top_id" not in cols:
+            conn.execute("ALTER TABLE messages ADD COLUMN reply_to_top_id INTEGER DEFAULT 0")
+            conn.execute("UPDATE messages SET reply_to_top_id=0 WHERE reply_to_top_id IS NULL")
+    except Exception:
+        pass
+
+    # Indexes must be created after migrations (old DBs may miss columns).
     conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_chat_ts_id ON messages(chat_id, timestamp, msg_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_chat_reply_to_msg_id ON messages(chat_id, reply_to_msg_id)')
+    conn.execute('CREATE INDEX IF NOT EXISTS idx_messages_chat_reply_to_top_id ON messages(chat_id, reply_to_top_id)')
     conn.commit()
 
 def get_connection(chat_id, row_factory=None):
@@ -51,17 +68,46 @@ def save_messages(conn, chat_id, messages):
         INSERT OR IGNORE INTO messages(
             chat_id, msg_id, date, timestamp,
             msg_file_name, user, msg,
-            ori_height, ori_width, og_info, reactions, msg_files, reply_to_msg_id
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ori_height, ori_width, og_info, reactions, replies_num, msg_files, reply_to_msg_id, reply_to_top_id
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     '''
+
     data = []
     for m in messages:
         og_info = json.dumps(m.get('og_info'), ensure_ascii=False) if m.get('og_info') else None
         reactions = json.dumps(m.get('reactions'), ensure_ascii=False) if m.get('reactions') else None
         msg_files = json.dumps(m.get('msg_files'), ensure_ascii=False) if m.get('msg_files') else None
-        data.append((chat_id, m['msg_id'], m['date'], m['timestamp'],
-                     m['msg_file_name'], m['user'], m['msg'],
-                     m['ori_height'], m['ori_width'], og_info, reactions, msg_files, m['reply_to_msg_id']))
+        try:
+            replies_num = int(m.get("replies_num") or 0)
+        except Exception:
+            replies_num = 0
+        try:
+            reply_to_msg_id = int(m.get("reply_to_msg_id") or 0)
+        except Exception:
+            reply_to_msg_id = 0
+        try:
+            reply_to_top_id = int(m.get("reply_to_top_id") or 0)
+        except Exception:
+            reply_to_top_id = 0
+
+        data.append((
+            chat_id,
+            m["msg_id"],
+            m["date"],
+            m["timestamp"],
+            m["msg_file_name"],
+            m["user"],
+            m["msg"],
+            m["ori_height"],
+            m["ori_width"],
+            og_info,
+            reactions,
+            replies_num,
+            msg_files,
+            reply_to_msg_id,
+            reply_to_top_id,
+        ))
+
     before = conn.total_changes
     conn.executemany(insert_sql, data)
     inserted = conn.total_changes - before
