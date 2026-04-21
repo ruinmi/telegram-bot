@@ -685,6 +685,12 @@ def chat_page(chat_id: str, request: Request):
     return templates.TemplateResponse("template.html", {"request": request, "chat_id": chat_id, 'chat_username': chat_username})
 
 
+@app.get("/sw.js")
+def service_worker_file():
+    sw_path = STATIC_DIR / "sw.js"
+    return FileResponse(str(sw_path), media_type="application/javascript", headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
+
+
 @app.get("/workers_status")
 def workers_status_route():
     return {"started": workers_started()}

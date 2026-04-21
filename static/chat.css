@@ -614,8 +614,8 @@ body {
 
 @media screen and (max-width: 768px) {
     body {
-        font-size: 17px;
-        font-weight: bold;
+        font-size: 16px;
+        font-weight: 500;
     }
 
     body #header {
@@ -624,26 +624,177 @@ body {
 
     body #searchBox {
         font-size: 14px;
-        width: 150px;
-        margin-left: 8px;
+        width: 100%;
+        margin-left: 0;
     }
 
-    body #confirmSearch {
+    body #confirmSearch,
+    body #downloadBrokenImages,
+    body #exitReplies,
+    body .header-secondary {
         height: 38px;
-        width: 81px;
-        font-size: 10px;
+        min-width: 88px;
+        font-size: 12px;
         line-height: 38px;
+        margin-left: 0;
     }
 
     body .date {
         font-size: 12px;
     }
 
-
-
     .select-component {
-        min-width: 60px;
-        font-size: 10px;
-        margin-left: 5px;
+        min-width: 120px;
+        font-size: 12px;
+        margin-left: 0;
+    }
+
+    .header-main,
+    .header-actions {
+        width: 100%;
+    }
+
+    .scroll-button {
+        right: 14px;
+    }
+}
+
+:root {
+    --app-bg: #020617;
+    --panel-bg: rgba(15, 23, 42, 0.76);
+    --panel-border: rgba(148, 163, 184, 0.18);
+    --panel-shadow: 0 24px 50px -30px rgba(15, 23, 42, 0.9);
+    --control-bg: rgba(15, 23, 42, 0.82);
+    --control-border: rgba(148, 163, 184, 0.2);
+    --control-hover: rgba(30, 41, 59, 0.96);
+    --accent-cyan: #38bdf8;
+    --accent-violet: #8b5cf6;
+}
+
+body {
+    color: #e2e8f0;
+    background-color: var(--app-bg);
+    background-image:
+      radial-gradient(circle at top, rgba(56, 189, 248, 0.12), transparent 32%),
+      radial-gradient(circle at bottom right, rgba(139, 92, 246, 0.16), transparent 28%),
+      linear-gradient(180deg, rgba(15, 23, 42, 0.95), rgba(2, 6, 23, 0.98));
+    padding-bottom: max(16px, env(safe-area-inset-bottom));
+}
+
+.container {
+    width: min(1120px, calc(100% - 24px));
+    padding-top: 18px;
+}
+
+#header {
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(1120px, calc(100% - 24px));
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px;
+    background: rgba(2, 6, 23, 0.78);
+    border: 1px solid var(--panel-border);
+    border-radius: 22px;
+    backdrop-filter: blur(18px);
+    box-shadow: var(--panel-shadow);
+    top: max(10px, env(safe-area-inset-top));
+}
+
+.header-main,
+.header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+}
+
+#searchBox,
+.select-component {
+    background: var(--control-bg);
+    border: 1px solid var(--control-border);
+    color: #f8fafc;
+    min-height: 42px;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+}
+
+#searchBox {
+    width: min(360px, 100%);
+    padding: 11px 14px;
+}
+
+#searchBox::placeholder {
+    color: rgba(226, 232, 240, 0.52);
+}
+
+#confirmSearch,
+#downloadBrokenImages,
+#exitReplies,
+.header-secondary {
+    margin-left: 0;
+    min-height: 42px;
+    padding: 0 16px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.18), rgba(14, 165, 233, 0.25));
+    border: 1px solid rgba(56, 189, 248, 0.22);
+    color: #f8fafc;
+    width: auto;
+}
+
+.header-secondary {
+    background: rgba(15, 23, 42, 0.88);
+    border-color: rgba(148, 163, 184, 0.2);
+}
+
+#confirmSearch:hover,
+#downloadBrokenImages:hover,
+#exitReplies:hover,
+.header-secondary:hover,
+.select-component:hover {
+    background: var(--control-hover);
+}
+
+#messages {
+    padding: 108px 0 72px 0;
+}
+
+.top-loader {
+    top: 96px;
+}
+
+.top-loader__inner {
+    background: rgba(15, 23, 42, 0.82);
+    border-color: rgba(148, 163, 184, 0.18);
+}
+
+.scroll-button {
+    background-color: rgba(15, 23, 42, 0.86);
+    border: 1px solid rgba(148, 163, 184, 0.18);
+    box-shadow: 0 12px 30px -20px rgba(0,0,0,0.75);
+}
+
+.scroll-button:hover {
+    background-color: rgba(30, 41, 59, 0.96);
+}
+
+.message.has-image .message-row {
+    min-width: min(520px, 60vw);
+}
+
+@media screen and (max-width: 900px) {
+    .container,
+    #header {
+        width: calc(100% - 16px);
+    }
+
+    #messages {
+        padding-top: 132px;
+    }
+
+    .top-loader {
+        top: 120px;
     }
 }

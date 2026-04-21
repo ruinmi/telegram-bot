@@ -2,9 +2,12 @@
 
 <head>
     <meta charset="utf-8">
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="icon" href="/static/resources/favicon.svg" type="image/svg+xml">
     <link rel="manifest" href="/static/manifest.json">
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
     <title>聊天记录</title>
     <link rel="stylesheet" href="/static/chat.css">
     <link rel="stylesheet" href="/static/components/message/index.css">
@@ -15,18 +18,23 @@
     <div id="chatToast" class="chat-toast" role="status" aria-live="polite"></div>
     <div class="container">
         <div id="header">
-            <input type="text" id="searchBox" placeholder="请输入日期或聊天内容进行搜索...">
-            <button id="confirmSearch">搜索</button>
-            <select id="chatSelect" class="select-component">
-            </select>
-            <select id="reactionSelect" class="select-component" title="表情排序">
-            </select>
-            <select id="repliesNumSelect" class="select-component" title="回复数排序">
-              <option value="">按回复数排序</option>
-              <option value="desc">回复数(高→低)</option>
-            </select>
-            <button id="downloadBrokenImages" title="下载该聊天所有缺失图片（按 10 张一批）">下载全部坏图</button>
-            <button id="exitReplies" class="hidden" title="返回聊天">返回</button>
+            <div class="header-main">
+              <input type="text" id="searchBox" placeholder="请输入日期或聊天内容进行搜索...">
+              <button id="confirmSearch">搜索</button>
+              <select id="chatSelect" class="select-component">
+              </select>
+              <select id="reactionSelect" class="select-component" title="表情排序">
+              </select>
+              <select id="repliesNumSelect" class="select-component" title="回复数排序">
+                <option value="">按回复数排序</option>
+                <option value="desc">回复数(高→低)</option>
+              </select>
+            </div>
+            <div class="header-actions">
+              <button id="installChatApp" class="header-secondary" type="button" data-role="install-app" hidden disabled>安装 App</button>
+              <button id="downloadBrokenImages" title="下载该聊天所有缺失图片（按 10 张一批）">下载全部坏图</button>
+              <button id="exitReplies" class="hidden" title="返回聊天">返回</button>
+            </div>
         </div>
         <div id="topLoader" class="top-loader hidden" aria-hidden="true">
           <div class="top-loader__inner">
@@ -46,6 +54,7 @@
     </button>
     <script>window.CHAT_ID = "{{ chat_id }}"; window.CHAT_USERNAME = "{{ chat_username }}";</script>
     <script type="module" src="/static/utils.js"></script>
+    <script src="/static/pwa.js"></script>
     <script type="module" src="/static/components/message/index.js"></script>
     <script type="module" src="/static/components/separator/index.js"></script>
     <script type="module" src="/static/chat.js"></script>

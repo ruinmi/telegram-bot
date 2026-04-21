@@ -3,6 +3,11 @@
 
 <head>
   <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f172a" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="manifest" href="/static/manifest.json">
   <link rel="icon" href="/static/resources/favicon.svg" type="image/svg+xml">
   <title>聊天频道管理</title>
   <style>
@@ -63,6 +68,13 @@
       justify-content: space-between;
     }
 
+    .page-header__actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
     h1 {
       font-size: clamp(26px, 3vw, 36px);
       line-height: 1.1;
@@ -88,6 +100,12 @@
       padding: 13px 28px;
       cursor: pointer;
       transition: transform 0.18s ease, box-shadow 0.25s ease, background 0.25s ease, opacity 0.25s ease;
+    }
+
+    .ghost-button {
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.24);
+      box-shadow: none;
     }
 
     button:hover:not(:disabled) {
@@ -189,7 +207,8 @@
     }
 
     input[type="text"],
-    textarea {
+    textarea,
+    select {
       width: 100%;
       border: 1px solid rgba(148, 163, 184, 0.35);
       border-radius: 14px;
@@ -206,7 +225,8 @@
     }
 
     input[type="text"]:focus,
-    textarea:focus {
+    textarea:focus,
+    select:focus {
       border-color: rgba(56, 189, 248, 0.7);
       box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.18);
       outline: none;
@@ -267,6 +287,28 @@
       font-weight: 600;
       color: var(--text-strong);
       letter-spacing: 0.01em;
+    }
+
+    #globalSearchChatChoices {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+    }
+
+    #globalSearchResults,
+    #sqlResult {
+      margin: 0;
+      min-height: 120px;
+      max-height: 420px;
+      overflow: auto;
+      padding: 16px;
+      border-radius: 16px;
+      border: 1px solid rgba(148, 163, 184, 0.18);
+      background: rgba(2, 6, 23, 0.68);
+      color: #cbd5e1;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
 
     .option-item small {
@@ -404,20 +446,11 @@
       padding-inline: 22px;
     }
 
+    #globalSearchResults,
     #sqlResult {
       margin: 22px 0 0;
-      background: rgba(15, 23, 42, 0.78);
-      border: 1px solid rgba(148, 163, 184, 0.22);
-      border-radius: 16px;
-      padding: 18px;
       font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
       font-size: 13px;
-      line-height: 1.6;
-      color: rgba(203, 213, 225, 0.92);
-      white-space: pre-wrap;
-      word-break: break-word;
-      max-height: 360px;
-      overflow: auto;
     }
 
     .helper-text {
@@ -550,7 +583,10 @@
         <h1>聊天频道管理</h1>
         <p class="subtitle">快速添加聊天频道、调整导出选项，并在同一处查看配置或执行 SQL 调试。</p>
       </div>
-      <button id="startWorkers" type="button">开始监听</button>
+      <div class="page-header__actions">
+        <button id="installAppButton" class="ghost-button" type="button" data-role="install-app" hidden disabled>安装 App</button>
+        <button id="startWorkers" type="button">开始监听</button>
+      </div>
     </header>
 
     <section class="surface">
@@ -659,6 +695,7 @@
     </section>
   </div>
 
+  <script src="/static/pwa.js"></script>
   <script>
     const toast = document.getElementById('toast');
     const toastMessage = document.getElementById('toastMessage');
