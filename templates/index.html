@@ -621,6 +621,34 @@
     </section>
 
     <section class="surface">
+      <h2 class="card-title">全局搜索</h2>
+      <p class="card-subtitle">跨多个频道/聊天统一搜索；可勾选范围并保存为搜索方案。</p>
+      <div class="form-field">
+        <label class="input-label" for="globalSearchQuery">搜索关键词</label>
+        <input type="text" id="globalSearchQuery" placeholder="输入关键词，可跨聊天搜索" />
+      </div>
+      <div class="form-field">
+        <label class="input-label" for="globalScopeSelect">已保存范围</label>
+        <select id="globalScopeSelect">
+          <option value="">不使用已保存范围</option>
+        </select>
+      </div>
+      <div class="form-field">
+        <label class="input-label" for="globalSearchScopeName">保存当前勾选为范围</label>
+        <input type="text" id="globalSearchScopeName" placeholder="例如：常用频道 / 工作群" />
+      </div>
+      <div class="form-field">
+        <label class="input-label">选择要搜索的频道</label>
+        <div id="globalSearchChatChoices"></div>
+      </div>
+      <div class="sql-actions">
+        <button type="button" id="runGlobalSearch">执行全局搜索</button>
+        <button type="button" id="saveGlobalScope">保存搜索范围</button>
+      </div>
+      <pre id="globalSearchResults"></pre>
+    </section>
+
+    <section class="surface">
       <h2 class="card-title">SQL 调试工具</h2>
       <p class="card-subtitle">针对选中的聊天频道执行 SQL，并查看原始返回数据。</p>
       <textarea id="sql_str" placeholder="输入 SQL..."></textarea>
@@ -660,8 +688,119 @@
     }
 
     let selectedChatId = null;
+    let latestChats = [];
+    let latestScopes = [];
     const cleanupPollers = new Map();
     const cleanupButtons = new Map();
+
+    function getSelectedGlobalChatIds() {
+      return Array.from(document.querySelectorAll('#globalSearchChatChoices input[type="checkbox"]:checked')).map(el => el.value);
+    }
+
+    function renderGlobalSearchChatChoices() {
+      const root = document.getElementById('globalSearchChatChoices');
+      if (!root) return;
+      root.innerHTML = '';
+      latestChats.forEach(chat => {
+        const label = document.createElement('label');
+        label.className = 'option-item';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.value = chat.id;
+        const content = document.createElement('div');
+        content.className = 'option-item__content';
+        const title = document.createElement('span');
+        title.className = 'option-item__title';
+        title.textContent = chat.remark || chat.id;
+        const small = document.createElement('small');
+        small.textContent = [chat.id, chat.username || ''].filter(Boolean).join(' · ');
+        content.appendChild(title);
+        content.appendChild(small);
+        label.appendChild(checkbox);
+        label.appendChild(content);
+        root.appendChild(label);
+      });
+    }
+
+    function renderSearchScopes() {
+      const select = document.getElementById('globalScopeSelect');
+      if (!select) return;
+      const current = select.value;
+      select.innerHTML = '<option value="">不使用已保存范围</option>';
+      latestScopes.forEach(scope => {
+        const option = document.createElement('option');
+        option.value = String(scope.id);
+        option.textContent = `${scope.name}（${(scope.chat_ids || []).length}）`;
+        select.appendChild(option);
+      });
+      if (latestScopes.some(scope => String(scope.id) === current)) {
+        select.value = current;
+      }
+    }
+
+    async function loadSearchScopes() {
+      try {
+        const res = await fetch('search_scopes');
+        const data = await res.json();
+        latestScopes = Array.isArray(data.scopes) ? data.scopes : [];
+        renderSearchScopes();
+      } catch (e) {
+        latestScopes = [];
+        renderSearchScopes();
+      }
+    }
+
+    async function saveCurrentSearchScope() {
+      const name = document.getElementById('globalSearchScopeName')?.value?.trim();
+      const chatIds = getSelectedGlobalChatIds();
+      const selectedScopeId = document.getElementById('globalScopeSelect')?.value || '';
+      if (!name) {
+        showToast('请先填写范围名称。', 'error');
+        return;
+      }
+      if (!chatIds.length) {
+        showToast('请至少勾选一个频道。', 'error');
+        return;
+      }
+      const payload = { name, chat_ids: chatIds };
+      if (selectedScopeId) payload.scope_id = Number(selectedScopeId);
+      const res = await fetch('search_scopes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast((data && data.error) || '保存搜索范围失败。', 'error');
+        return;
+      }
+      showToast('搜索范围已保存。');
+      document.getElementById('globalSearchScopeName').value = '';
+      await loadSearchScopes();
+      if (data && data.scope && data.scope.id) {
+        document.getElementById('globalScopeSelect').value = String(data.scope.id);
+      }
+    }
+
+    async function runGlobalSearch() {
+      const query = document.getElementById('globalSearchQuery')?.value?.trim() || '';
+      const scopeId = document.getElementById('globalScopeSelect')?.value || '';
+      const chatIds = getSelectedGlobalChatIds();
+      const params = new URLSearchParams();
+      params.set('q', query);
+      if (scopeId) params.set('scope_id', scopeId);
+      if (chatIds.length) params.set('chat_ids', chatIds.join(','));
+      const res = await fetch(`search_global?${params.toString()}`);
+      const data = await res.json();
+      const output = document.getElementById('globalSearchResults');
+      if (!res.ok) {
+        output.innerText = JSON.stringify(data, null, 2);
+        showToast((data && data.error) || '全局搜索失败。', 'error');
+        return;
+      }
+      output.innerText = JSON.stringify(data, null, 2);
+      showToast(`全局搜索完成，共 ${data.total ?? 0} 条。`);
+    }
 
     function setCleanupButtonState(chatId, state, jobId) {
       const btn = cleanupButtons.get(chatId);
@@ -732,10 +871,12 @@
       fetch('chats')
         .then(r => r.json())
         .then(data => {
+          latestChats = Array.isArray(data.chats) ? data.chats : [];
+          renderGlobalSearchChatChoices();
           const ul = document.getElementById('chatList');
           ul.innerHTML = '';
           cleanupButtons.clear();
-          data.chats.forEach(chat => {
+          latestChats.forEach(chat => {
             const li = document.createElement('li');
             li.className = 'chat-item';
 
@@ -1004,7 +1145,17 @@
     document.addEventListener('DOMContentLoaded', () => {
       bindDownloadImagesOnlyOption();
       loadChats();
+      loadSearchScopes();
       checkWorkers();
+      document.getElementById('runGlobalSearch')?.addEventListener('click', runGlobalSearch);
+      document.getElementById('saveGlobalScope')?.addEventListener('click', saveCurrentSearchScope);
+      document.getElementById('globalScopeSelect')?.addEventListener('change', (event) => {
+        const selected = latestScopes.find(scope => String(scope.id) === String(event.target.value || ''));
+        const ids = new Set(selected?.chat_ids || []);
+        document.querySelectorAll('#globalSearchChatChoices input[type="checkbox"]').forEach((el) => {
+          el.checked = ids.has(el.value);
+        });
+      });
     });
   </script>
 

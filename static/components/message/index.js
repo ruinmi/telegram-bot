@@ -190,7 +190,7 @@ function _linkifyHtml(html) {
 
 // 根据单个消息数据生成 HTML 结构
 export function createMessageHtml(message, index, searchValue) {
-    const position = message.user === '我' ? 'right' : 'left';
+    const position = Number(message.is_self) === 1 || message.user === '我' ? 'right' : 'left';
     const telegramUrl = chatUsername ? `https://t.me/${chatUsername}/${message.msg_id ?? ''}` : `https://t.me/c/${message.chat_id}/${message.msg_id ?? ''}`;
 
     // 1. 文本内容
