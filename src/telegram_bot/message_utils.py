@@ -125,7 +125,15 @@ def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | Non
         except Exception:
             replies_num = 0
         reactions = raw_data.get('Reactions') or {}
-        user = '我' if user_id == me_id else user_id
+        out_flag = raw_data.get('Out')
+        if out_flag is None:
+            out_flag = raw_data.get('out')
+        try:
+            is_self = 1 if bool(out_flag) or (user_id and user_id == me_id) else 0
+        except Exception:
+            is_self = 1 if (user_id and user_id == me_id) else 0
+        sender_id = str(user_id or '')
+        user = '我' if is_self else sender_id
 
         message = {
             'date': date,
@@ -134,6 +142,8 @@ def parse_messages(chat_id: str, raw_messages: List[dict], tz, remark: str | Non
             'msg_file_name': msg_file_name,
             'msg_files': [],
             'user': user,
+            'sender_id': sender_id,
+            'is_self': is_self,
             'msg': msg_text,
             'reply_to_msg_id': reply_to_msg_id,
             'reply_to_top_id': reply_to_top_id,

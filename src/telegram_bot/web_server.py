@@ -20,7 +20,18 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
 from telegram_bot.archiver import handle
-from telegram_bot.db_utils import get_connection, get_db_path
+from telegram_bot.db_utils import (
+    delete_chat as delete_chat_record,
+    get_app_connection,
+    get_chat,
+    get_connection,
+    get_db_path,
+    list_chats_db,
+    list_search_scopes,
+    search_messages_global,
+    upsert_chat,
+    upsert_search_scope,
+)
 from telegram_bot.message_utils import is_ali_link_stale, is_quark_link_stale
 from telegram_bot.paths import BASE_DIR, DOWNLOADS_DIR, STATIC_DIR, TEMPLATES_DIR, ensure_runtime_dirs
 from telegram_bot.project_logger import get_logger
@@ -103,6 +114,12 @@ class DownloadMissingImagesRequest(BaseModel):
     batch_size: int = 10
 
 
+class SearchScopeRequest(BaseModel):
+    name: str
+    chat_ids: list[str]
+    scope_id: int | None = None
+
+
 def _json_error(status_code: int, message: str) -> JSONResponse:
     return JSONResponse(status_code=status_code, content={"error": message})
 
@@ -112,22 +129,30 @@ def workers_started() -> bool:
 
 
 def load_chats() -> list[dict]:
-    if os.path.exists(CHATS_FILE):
-        try:
+    conn = get_app_connection(row_factory=sqlite3.Row)
+    try:
+        chats = list_chats_db(conn)
+        if chats:
+            return chats
+        if os.path.exists(CHATS_FILE):
             with open(CHATS_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                return data if isinstance(data, list) else []
-        except Exception as e:
-            logger.error(f"Error reading {CHATS_FILE}: {e}")
-    return []
+            if isinstance(data, list):
+                for chat in data:
+                    upsert_chat(conn, chat)
+                return list_chats_db(conn)
+        return []
+    finally:
+        conn.close()
 
 
 def save_chats(chats: list[dict]) -> None:
+    conn = get_app_connection(row_factory=sqlite3.Row)
     try:
-        with open(CHATS_FILE, "w", encoding="utf-8") as f:
-            json.dump(chats, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        logger.error(f"Error writing {CHATS_FILE}: {e}")
+        for chat in chats:
+            upsert_chat(conn, chat)
+    finally:
+        conn.close()
 
 
 def start_chat_worker(chat: dict, interval: int = 1800) -> None:
@@ -285,6 +310,16 @@ def row_to_message(row):
         item["reply_to_top_id"] = int(item["reply_to_top_id"] or 0)
     except Exception:
         item["reply_to_top_id"] = 0
+    if item.get("is_self") is None:
+        item["is_self"] = 0
+    try:
+        item["is_self"] = int(item.get("is_self") or 0)
+    except Exception:
+        item["is_self"] = 0
+    if item.get("sender_id") is None:
+        item["sender_id"] = ""
+    if item.get("user") in (None, "") and item.get("sender_id"):
+        item["user"] = "我" if item["is_self"] else item["sender_id"]
     return item
 
 
@@ -650,6 +685,12 @@ def chat_page(chat_id: str, request: Request):
     return templates.TemplateResponse("template.html", {"request": request, "chat_id": chat_id, 'chat_username': chat_username})
 
 
+@app.get("/sw.js")
+def service_worker_file():
+    sw_path = STATIC_DIR / "sw.js"
+    return FileResponse(str(sw_path), media_type="application/javascript", headers={"Service-Worker-Allowed": "/", "Cache-Control": "no-cache"})
+
+
 @app.get("/workers_status")
 def workers_status_route():
     return {"started": workers_started()}
@@ -704,6 +745,49 @@ def legacy_fonts_files(filename: str):
 @app.get("/chats")
 def list_chats():
     return {"chats": load_chats()}
+
+
+@app.get("/search_scopes")
+def get_search_scopes():
+    conn = get_app_connection(row_factory=sqlite3.Row)
+    try:
+        return {"scopes": list_search_scopes(conn)}
+    finally:
+        conn.close()
+
+
+@app.post("/search_scopes")
+def save_search_scope(payload: SearchScopeRequest):
+    conn = get_app_connection(row_factory=sqlite3.Row)
+    try:
+        scope = upsert_search_scope(conn, payload.name, payload.chat_ids, payload.scope_id)
+        return {"scope": scope}
+    except ValueError as e:
+        return _json_error(400, str(e))
+    finally:
+        conn.close()
+
+
+@app.get("/search_global")
+def global_search_messages(
+    q: str = Query(""),
+    chat_ids: str = Query(""),
+    scope_id: int | None = Query(None),
+    offset: int = Query(0),
+    limit: int = Query(20),
+):
+    conn = get_app_connection(row_factory=sqlite3.Row)
+    try:
+        selected_chat_ids = [c.strip() for c in str(chat_ids or "").split(",") if c.strip()]
+        if scope_id is not None and not selected_chat_ids:
+            scope_rows = conn.execute(
+                "SELECT chat_id FROM search_scope_items WHERE scope_id=? ORDER BY chat_id",
+                (int(scope_id),),
+            ).fetchall()
+            selected_chat_ids = [row["chat_id"] for row in scope_rows]
+        return search_messages_global(conn, q, selected_chat_ids, offset, limit)
+    finally:
+        conn.close()
 
 
 @app.post("/update_chat_settings")
@@ -884,14 +968,17 @@ def delete_chat(payload: ChatIdRequest):
 
     chats = load_chats()
     before = len(chats)
-    chats = [c for c in chats if str(c.get("id")) != chat_id]
-    save_chats(chats)
+    deleted = False
+    conn = get_app_connection(row_factory=sqlite3.Row)
+    try:
+        deleted = delete_chat_record(conn, chat_id)
+    finally:
+        conn.close()
 
     removed_data = _safe_remove_tree(str(BASE_DIR / "data"), chat_id)
     removed_downloads = _safe_remove_tree(str(BASE_DIR / "downloads"), chat_id)
 
-    deleted = len(chats) != before
-    return {"deleted": deleted, "removed_data": removed_data, "removed_downloads": removed_downloads}
+    return {"deleted": deleted or (before != len(load_chats())), "removed_data": removed_data, "removed_downloads": removed_downloads}
 
 
 @app.post("/download_telegram_media")
@@ -1271,6 +1358,8 @@ def get_messages(
                 m.timestamp,
                 m.msg_file_name,
                 m.user,
+                m.sender_id,
+                m.is_self,
                 m.msg,
                 m.ori_height,
                 m.ori_width,
@@ -1286,6 +1375,8 @@ def get_messages(
                 r.timestamp AS r_timestamp,
                 r.msg_file_name AS r_msg_file_name,
                 r.user AS r_user,
+                r.sender_id AS r_sender_id,
+                r.is_self AS r_is_self,
                 r.msg AS r_msg,
                 r.ori_height AS r_ori_height,
                 r.ori_width AS r_ori_width,
@@ -1369,6 +1460,8 @@ def get_messages_between(
                 m.timestamp,
                 m.msg_file_name,
                 m.user,
+                m.sender_id,
+                m.is_self,
                 m.msg,
                 m.ori_height,
                 m.ori_width,
@@ -1384,6 +1477,8 @@ def get_messages_between(
                 r.timestamp AS r_timestamp,
                 r.msg_file_name AS r_msg_file_name,
                 r.user AS r_user,
+                r.sender_id AS r_sender_id,
+                r.is_self AS r_is_self,
                 r.msg AS r_msg,
                 r.ori_height AS r_ori_height,
                 r.ori_width AS r_ori_width,
@@ -1444,6 +1539,8 @@ def get_message(chat_id: str, msg_id: int):
                 m.timestamp,
                 m.msg_file_name,
                 m.user,
+                m.sender_id,
+                m.is_self,
                 m.msg,
                 m.ori_height,
                 m.ori_width,
@@ -1459,6 +1556,8 @@ def get_message(chat_id: str, msg_id: int):
                 r.timestamp AS r_timestamp,
                 r.msg_file_name AS r_msg_file_name,
                 r.user AS r_user,
+                r.sender_id AS r_sender_id,
+                r.is_self AS r_is_self,
                 r.msg AS r_msg,
                 r.ori_height AS r_ori_height,
                 r.ori_width AS r_ori_width,
@@ -1528,6 +1627,8 @@ def get_replies(
                 m.timestamp,
                 m.msg_file_name,
                 m.user,
+                m.sender_id,
+                m.is_self,
                 m.msg,
                 m.ori_height,
                 m.ori_width,
@@ -1543,6 +1644,8 @@ def get_replies(
                 r.timestamp AS r_timestamp,
                 r.msg_file_name AS r_msg_file_name,
                 r.user AS r_user,
+                r.sender_id AS r_sender_id,
+                r.is_self AS r_is_self,
                 r.msg AS r_msg,
                 r.ori_height AS r_ori_height,
                 r.ori_width AS r_ori_width,
@@ -1741,6 +1844,8 @@ def get_messages_by_replies_num(
                 m.timestamp,
                 m.msg_file_name,
                 m.user,
+                m.sender_id,
+                m.is_self,
                 m.msg,
                 m.ori_height,
                 m.ori_width,
@@ -1756,6 +1861,8 @@ def get_messages_by_replies_num(
                 r.timestamp AS r_timestamp,
                 r.msg_file_name AS r_msg_file_name,
                 r.user AS r_user,
+                r.sender_id AS r_sender_id,
+                r.is_self AS r_is_self,
                 r.msg AS r_msg,
                 r.ori_height AS r_ori_height,
                 r.ori_width AS r_ori_width,
@@ -1862,6 +1969,8 @@ def search_messages(
                 m.timestamp,
                 m.msg_file_name,
                 m.user,
+                m.sender_id,
+                m.is_self,
                 m.msg,
                 m.ori_height,
                 m.ori_width,
@@ -1877,6 +1986,8 @@ def search_messages(
                 r.timestamp AS r_timestamp,
                 r.msg_file_name AS r_msg_file_name,
                 r.user AS r_user,
+                r.sender_id AS r_sender_id,
+                r.is_self AS r_is_self,
                 r.msg AS r_msg,
                 r.ori_height AS r_ori_height,
                 r.ori_width AS r_ori_width,
