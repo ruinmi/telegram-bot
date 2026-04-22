@@ -17,6 +17,14 @@ def test_chat_css_last_body_rule_keeps_bg_png_background():
     assert "url('resources/bg.png')" in body_rules[-1]
 
 
+def test_chat_css_last_body_rule_does_not_dim_bg_png_with_gradient_overlay():
+    css = _read("static/chat.css")
+    body_rules = re.findall(r"body\s*\{.*?\}", css, flags=re.S)
+
+    assert body_rules, "expected at least one body CSS rule"
+    assert "linear-gradient" not in body_rules[-1]
+
+
 def test_chat_template_has_collapsed_mobile_search_trigger_and_expand_panel():
     template = _read("templates/template.html")
 
