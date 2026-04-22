@@ -1308,8 +1308,6 @@ const mobileSearchExpanded = document.getElementById('mobileSearchExpanded');
 const mobileSearchPanel = document.getElementById('mobileSearchPanel');
 const mobileControlsToggle = document.getElementById('mobileControlsToggle');
 const headerEl = document.getElementById('header');
-const mobileHeaderMediaQuery = window.matchMedia('(max-width: 768px)');
-
 let isMobileSearchVisible = false;
 let isMobileControlsOpen = false;
 
@@ -1322,18 +1320,6 @@ function updateHeaderOffsets() {
 
 function syncMobileHeaderState() {
     if (!headerEl || !mobileSearchTrigger || !mobileSearchExpanded || !mobileSearchPanel) return;
-
-    if (!mobileHeaderMediaQuery.matches) {
-        headerEl.classList.remove('is-collapsed');
-        mobileSearchTrigger.classList.remove('is-hidden');
-        mobileSearchExpanded.classList.add('is-visible');
-        mobileSearchPanel.classList.add('is-open');
-        mobileSearchExpanded.setAttribute('aria-hidden', 'false');
-        mobileSearchPanel.setAttribute('aria-hidden', 'false');
-        mobileControlsToggle?.classList.add('is-open');
-        requestAnimationFrame(updateHeaderOffsets);
-        return;
-    }
 
     headerEl.classList.toggle('is-collapsed', !isMobileSearchVisible);
     mobileSearchTrigger.classList.toggle('is-hidden', isMobileSearchVisible);
@@ -1357,7 +1343,6 @@ function toggleMobileSearch(forceVisible = !isMobileSearchVisible) {
 }
 
 function toggleMobileControls(forceOpen = !isMobileControlsOpen) {
-    if (!mobileHeaderMediaQuery.matches) return;
     if (!isMobileSearchVisible) {
         isMobileSearchVisible = true;
     }
@@ -1373,16 +1358,8 @@ document.addEventListener('DOMContentLoaded', () => {
     requestAnimationFrame(updateHeaderOffsets);
 });
 
-mobileHeaderMediaQuery.addEventListener('change', () => {
-    if (!mobileHeaderMediaQuery.matches) {
-        isMobileSearchVisible = false;
-        isMobileControlsOpen = false;
-    }
-    syncMobileHeaderState();
-});
-
 document.addEventListener('click', (event) => {
-    if (!mobileHeaderMediaQuery.matches || !isMobileSearchVisible || !headerEl) return;
+    if (!isMobileSearchVisible || !headerEl) return;
     if (!headerEl.contains(event.target)) {
         toggleMobileSearch(false);
     }
@@ -1392,7 +1369,7 @@ document.addEventListener('keydown', function (event) {
     if (event.key === 'Enter') {
         confirmSearchBtn.click();
     }
-    if (event.key === 'Escape' && mobileHeaderMediaQuery.matches && isMobileSearchVisible) {
+    if (event.key === 'Escape' && isMobileSearchVisible) {
         toggleMobileSearch(false);
     }
 });

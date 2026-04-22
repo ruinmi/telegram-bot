@@ -44,6 +44,14 @@ def test_chat_js_controls_mobile_search_expand_state():
     assert "mobileSearchPanel.classList.toggle('is-open'" in script
 
 
+def test_chat_js_does_not_force_desktop_header_open_by_default():
+    script = _read("static/chat.js")
+
+    assert "mobileSearchExpanded.classList.add('is-visible');" not in script
+    assert "mobileSearchPanel.classList.add('is-open');" not in script
+    assert "mobileSearchTrigger.classList.remove('is-hidden');" not in script
+
+
 def test_chat_css_uses_transparent_default_header_and_left_expand_animation():
     css = _read("static/chat.css")
 
@@ -52,6 +60,19 @@ def test_chat_css_uses_transparent_default_header_and_left_expand_animation():
     assert '.mobile-search-expanded.is-visible {' in css
     assert 'transform-origin: right center;' in css
     assert 'translateX(0)' in css
+
+
+def test_chat_css_keeps_collapsed_trigger_right_aligned_on_mobile():
+    css = _read("static/chat.css")
+
+    assert re.search(r"body #header\s*\{[^}]*justify-content:\s*flex-end;", css, flags=re.S)
+
+
+def test_chat_css_gives_search_action_buttons_their_own_fixed_columns():
+    css = _read("static/chat.css")
+
+    assert re.search(r"#confirmSearch\s*,\s*#mobileControlsToggle\s*\{[^}]*width:\s*42px;", css, flags=re.S)
+    assert re.search(r"#confirmSearch\s*,\s*#mobileControlsToggle\s*\{[^}]*margin-left:\s*0;", css, flags=re.S)
 
 
 def test_management_template_has_mobile_chat_actions_grid():
