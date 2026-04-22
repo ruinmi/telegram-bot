@@ -75,6 +75,13 @@ def test_chat_css_gives_search_action_buttons_their_own_fixed_columns():
     assert re.search(r"#confirmSearch\s*,\s*#mobileControlsToggle\s*\{[^}]*margin-left:\s*0;", css, flags=re.S)
 
 
+def test_chat_css_does_not_force_mobile_search_icon_button_to_expand_to_88px():
+    css = _read("static/chat.css")
+
+    assert not re.search(r"body #confirmSearch\s*,\s*body #downloadBrokenImages", css, flags=re.S)
+    assert re.search(r"@media screen and \(max-width: 768px\)\s*\{.*?#confirmSearch\s*,\s*#mobileControlsToggle\s*\{[^}]*min-width:\s*42px;[^}]*max-width:\s*42px;", css, flags=re.S)
+
+
 def test_management_template_has_mobile_chat_actions_grid():
     template = _read("templates/index.html")
 
