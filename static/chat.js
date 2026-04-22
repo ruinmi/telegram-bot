@@ -1303,9 +1303,99 @@ async function ensureSearchScrollable() {
 document.addEventListener('DOMContentLoaded', loadMessages);
 
 const confirmSearchBtn = document.getElementById('confirmSearch');
+const mobileSearchToggle = document.getElementById('mobileSearchToggle');
+const mobileSearchPanel = document.getElementById('mobileSearchPanel');
+const mobileControlsToggle = document.getElementById('mobileControlsToggle');
+const mobileSecondaryPanel = document.getElementById('mobileSecondaryPanel');
+const mobileHeaderMediaQuery = window.matchMedia('(max-width: 768px)');
+
+let isMobileSearchExpanded = false;
+let isMobileControlsExpanded = false;
+
+function updateHeaderOffsets() {
+    const header = document.getElementById('header');
+    if (!header) return;
+    const headerRect = header.getBoundingClientRect();
+    const headerBottom = Math.ceil(headerRect.bottom);
+    document.documentElement.style.setProperty('--chat-header-offset', `${headerBottom + 14}px`);
+    document.documentElement.style.setProperty('--chat-loader-offset', `${Math.max(56, headerBottom - 10)}px`);
+}
+
+function syncMobileHeaderState() {
+    if (!mobileSearchPanel || !mobileSecondaryPanel || !mobileSearchToggle || !mobileControlsToggle) return;
+
+    if (!mobileHeaderMediaQuery.matches) {
+        mobileSearchPanel.classList.add('is-expanded');
+        mobileSecondaryPanel.classList.add('is-open');
+        mobileSearchPanel.setAttribute('aria-hidden', 'false');
+        mobileSecondaryPanel.setAttribute('aria-hidden', 'false');
+        mobileControlsToggle.classList.remove('is-open');
+        mobileSearchToggle.setAttribute('aria-expanded', 'true');
+        mobileControlsToggle.setAttribute('aria-expanded', 'true');
+        requestAnimationFrame(updateHeaderOffsets);
+        return;
+    }
+
+    mobileSearchPanel.classList.toggle('is-expanded', isMobileSearchExpanded);
+    mobileSecondaryPanel.classList.toggle('is-open', isMobileSearchExpanded && isMobileControlsExpanded);
+    mobileControlsToggle.classList.toggle('is-open', isMobileSearchExpanded && isMobileControlsExpanded);
+    mobileSearchPanel.setAttribute('aria-hidden', String(!isMobileSearchExpanded));
+    mobileSecondaryPanel.setAttribute('aria-hidden', String(!(isMobileSearchExpanded && isMobileControlsExpanded)));
+    mobileSearchToggle.setAttribute('aria-expanded', String(isMobileSearchExpanded));
+    mobileControlsToggle.setAttribute('aria-expanded', String(isMobileSearchExpanded && isMobileControlsExpanded));
+    requestAnimationFrame(updateHeaderOffsets);
+}
+
+function toggleMobileSearchPanel(forceExpanded = !isMobileSearchExpanded) {
+    isMobileSearchExpanded = !!forceExpanded;
+    if (!isMobileSearchExpanded) {
+        isMobileControlsExpanded = false;
+    }
+    syncMobileHeaderState();
+    if (isMobileSearchExpanded) {
+        document.getElementById('searchBox')?.focus();
+    }
+}
+
+function toggleMobileControls(forceExpanded = !isMobileControlsExpanded) {
+    if (!isMobileHeaderMediaQuery.matches) return;
+    if (!isMobileSearchExpanded) {
+        isMobileSearchExpanded = true;
+    }
+    isMobileControlsExpanded = !!forceExpanded;
+    syncMobileHeaderState();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    syncMobileHeaderState();
+    mobileSearchToggle?.addEventListener('click', () => toggleMobileSearchPanel());
+    mobileControlsToggle?.addEventListener('click', () => toggleMobileControls());
+    window.addEventListener('resize', updateHeaderOffsets);
+    requestAnimationFrame(updateHeaderOffsets);
+});
+
+mobileHeaderMediaQuery.addEventListener('change', () => {
+    if (!mobileHeaderMediaQuery.matches) {
+        isMobileSearchExpanded = false;
+        isMobileControlsExpanded = false;
+    }
+    syncMobileHeaderState();
+});
+
+document.addEventListener('click', (event) => {
+    if (!mobileHeaderMediaQuery.matches || !isMobileSearchExpanded) return;
+    const header = document.getElementById('header');
+    if (header && !header.contains(event.target)) {
+        toggleMobileSearchPanel(false);
+    }
+});
+
 document.addEventListener('keydown', function (event) {
     if (event.key === 'Enter') {
         confirmSearchBtn.click();
+    }
+    if (event.key === 'Escape' && mobileHeaderMediaQuery.matches && isMobileSearchExpanded) {
+        toggleMobileSearchPanel(false);
     }
 });
 
