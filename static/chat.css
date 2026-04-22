@@ -625,7 +625,6 @@ body {
         margin-left: 0;
     }
 
-    body #confirmSearch,
     body #downloadBrokenImages,
     body #exitReplies,
     body .header-secondary {
@@ -981,5 +980,16 @@ body {
         width: 100%;
         min-width: 0;
         font-size: 13px;
+    }
+
+    #confirmSearch,
+    #mobileControlsToggle {
+        width: 42px;
+        min-width: 42px;
+        max-width: 42px;
+        height: 42px;
+        line-height: 1;
+        font-size: 0;
+        flex: 0 0 42px;
     }
 }
