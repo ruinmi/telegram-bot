@@ -1303,72 +1303,71 @@ async function ensureSearchScrollable() {
 document.addEventListener('DOMContentLoaded', loadMessages);
 
 const confirmSearchBtn = document.getElementById('confirmSearch');
-const mobileSearchToggle = document.getElementById('mobileSearchToggle');
+const mobileSearchTrigger = document.getElementById('mobileSearchTrigger');
+const mobileSearchExpanded = document.getElementById('mobileSearchExpanded');
 const mobileSearchPanel = document.getElementById('mobileSearchPanel');
 const mobileControlsToggle = document.getElementById('mobileControlsToggle');
-const mobileSecondaryPanel = document.getElementById('mobileSecondaryPanel');
+const headerEl = document.getElementById('header');
 const mobileHeaderMediaQuery = window.matchMedia('(max-width: 768px)');
 
-let isMobileSearchExpanded = false;
-let isMobileControlsExpanded = false;
+let isMobileSearchVisible = false;
+let isMobileControlsOpen = false;
 
 function updateHeaderOffsets() {
-    const header = document.getElementById('header');
-    if (!header) return;
-    const headerRect = header.getBoundingClientRect();
-    const headerBottom = Math.ceil(headerRect.bottom);
+    if (!headerEl) return;
+    const headerBottom = Math.ceil(headerEl.getBoundingClientRect().bottom);
     document.documentElement.style.setProperty('--chat-header-offset', `${headerBottom + 14}px`);
     document.documentElement.style.setProperty('--chat-loader-offset', `${Math.max(56, headerBottom - 10)}px`);
 }
 
 function syncMobileHeaderState() {
-    if (!mobileSearchPanel || !mobileSecondaryPanel || !mobileSearchToggle || !mobileControlsToggle) return;
+    if (!headerEl || !mobileSearchTrigger || !mobileSearchExpanded || !mobileSearchPanel) return;
 
     if (!mobileHeaderMediaQuery.matches) {
-        mobileSearchPanel.classList.add('is-expanded');
-        mobileSecondaryPanel.classList.add('is-open');
+        headerEl.classList.remove('is-collapsed');
+        mobileSearchTrigger.classList.remove('is-hidden');
+        mobileSearchExpanded.classList.add('is-visible');
+        mobileSearchPanel.classList.add('is-open');
+        mobileSearchExpanded.setAttribute('aria-hidden', 'false');
         mobileSearchPanel.setAttribute('aria-hidden', 'false');
-        mobileSecondaryPanel.setAttribute('aria-hidden', 'false');
-        mobileControlsToggle.classList.remove('is-open');
-        mobileSearchToggle.setAttribute('aria-expanded', 'true');
-        mobileControlsToggle.setAttribute('aria-expanded', 'true');
+        mobileControlsToggle?.classList.add('is-open');
         requestAnimationFrame(updateHeaderOffsets);
         return;
     }
 
-    mobileSearchPanel.classList.toggle('is-expanded', isMobileSearchExpanded);
-    mobileSecondaryPanel.classList.toggle('is-open', isMobileSearchExpanded && isMobileControlsExpanded);
-    mobileControlsToggle.classList.toggle('is-open', isMobileSearchExpanded && isMobileControlsExpanded);
-    mobileSearchPanel.setAttribute('aria-hidden', String(!isMobileSearchExpanded));
-    mobileSecondaryPanel.setAttribute('aria-hidden', String(!(isMobileSearchExpanded && isMobileControlsExpanded)));
-    mobileSearchToggle.setAttribute('aria-expanded', String(isMobileSearchExpanded));
-    mobileControlsToggle.setAttribute('aria-expanded', String(isMobileSearchExpanded && isMobileControlsExpanded));
+    headerEl.classList.toggle('is-collapsed', !isMobileSearchVisible);
+    mobileSearchTrigger.classList.toggle('is-hidden', isMobileSearchVisible);
+    mobileSearchExpanded.classList.toggle('is-visible', isMobileSearchVisible);
+    mobileSearchPanel.classList.toggle('is-open', isMobileSearchVisible && isMobileControlsOpen);
+    mobileControlsToggle?.classList.toggle('is-open', isMobileSearchVisible && isMobileControlsOpen);
+    mobileSearchExpanded.setAttribute('aria-hidden', String(!isMobileSearchVisible));
+    mobileSearchPanel.setAttribute('aria-hidden', String(!(isMobileSearchVisible && isMobileControlsOpen)));
     requestAnimationFrame(updateHeaderOffsets);
 }
 
-function toggleMobileSearchPanel(forceExpanded = !isMobileSearchExpanded) {
-    isMobileSearchExpanded = !!forceExpanded;
-    if (!isMobileSearchExpanded) {
-        isMobileControlsExpanded = false;
+function toggleMobileSearch(forceVisible = !isMobileSearchVisible) {
+    isMobileSearchVisible = !!forceVisible;
+    if (!isMobileSearchVisible) {
+        isMobileControlsOpen = false;
     }
     syncMobileHeaderState();
-    if (isMobileSearchExpanded) {
+    if (isMobileSearchVisible) {
         document.getElementById('searchBox')?.focus();
     }
 }
 
-function toggleMobileControls(forceExpanded = !isMobileControlsExpanded) {
-    if (!isMobileHeaderMediaQuery.matches) return;
-    if (!isMobileSearchExpanded) {
-        isMobileSearchExpanded = true;
+function toggleMobileControls(forceOpen = !isMobileControlsOpen) {
+    if (!mobileHeaderMediaQuery.matches) return;
+    if (!isMobileSearchVisible) {
+        isMobileSearchVisible = true;
     }
-    isMobileControlsExpanded = !!forceExpanded;
+    isMobileControlsOpen = !!forceOpen;
     syncMobileHeaderState();
 }
 
 document.addEventListener('DOMContentLoaded', () => {
     syncMobileHeaderState();
-    mobileSearchToggle?.addEventListener('click', () => toggleMobileSearchPanel());
+    mobileSearchTrigger?.addEventListener('click', () => toggleMobileSearch(true));
     mobileControlsToggle?.addEventListener('click', () => toggleMobileControls());
     window.addEventListener('resize', updateHeaderOffsets);
     requestAnimationFrame(updateHeaderOffsets);
@@ -1376,17 +1375,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
 mobileHeaderMediaQuery.addEventListener('change', () => {
     if (!mobileHeaderMediaQuery.matches) {
-        isMobileSearchExpanded = false;
-        isMobileControlsExpanded = false;
+        isMobileSearchVisible = false;
+        isMobileControlsOpen = false;
     }
     syncMobileHeaderState();
 });
 
 document.addEventListener('click', (event) => {
-    if (!mobileHeaderMediaQuery.matches || !isMobileSearchExpanded) return;
-    const header = document.getElementById('header');
-    if (header && !header.contains(event.target)) {
-        toggleMobileSearchPanel(false);
+    if (!mobileHeaderMediaQuery.matches || !isMobileSearchVisible || !headerEl) return;
+    if (!headerEl.contains(event.target)) {
+        toggleMobileSearch(false);
     }
 });
 
@@ -1394,8 +1392,8 @@ document.addEventListener('keydown', function (event) {
     if (event.key === 'Enter') {
         confirmSearchBtn.click();
     }
-    if (event.key === 'Escape' && mobileHeaderMediaQuery.matches && isMobileSearchExpanded) {
-        toggleMobileSearchPanel(false);
+    if (event.key === 'Escape' && mobileHeaderMediaQuery.matches && isMobileSearchVisible) {
+        toggleMobileSearch(false);
     }
 });
 

@@ -131,17 +131,7 @@ def workers_started() -> bool:
 def load_chats() -> list[dict]:
     conn = get_app_connection(row_factory=sqlite3.Row)
     try:
-        chats = list_chats_db(conn)
-        if chats:
-            return chats
-        if os.path.exists(CHATS_FILE):
-            with open(CHATS_FILE, "r", encoding="utf-8") as f:
-                data = json.load(f)
-            if isinstance(data, list):
-                for chat in data:
-                    upsert_chat(conn, chat)
-                return list_chats_db(conn)
-        return []
+        return list_chats_db(conn)
     finally:
         conn.close()
 
