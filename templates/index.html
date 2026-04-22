@@ -381,7 +381,10 @@
 
     .chat-actions {
       display: flex;
+      flex-wrap: wrap;
       align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
       padding: 10px 14px 10px 0;
     }
 
@@ -413,11 +416,12 @@
 
     .chat-actions button {
       padding: 10px 18px;
+      min-height: 42px;
       background: rgba(248, 113, 113, 0.15);
       border: 1px solid rgba(248, 113, 113, 0.35);
       color: #fecaca;
       box-shadow: none;
-      margin-left: 8px;
+      margin-left: 0;
     }
 
     .chat-actions button:hover:not(:disabled) {
@@ -539,6 +543,19 @@
         font-size: 26px;
       }
 
+      .page-header {
+        gap: 14px;
+      }
+
+      .page-header__actions {
+        width: 100%;
+      }
+
+      .page-header__actions button {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+
       .add-form__grid {
         grid-template-columns: 1fr;
         gap: 22px;
@@ -551,6 +568,35 @@
 
       #addButton {
         width: 100%;
+      }
+
+      .chat-item {
+        flex-direction: column;
+      }
+
+      .chat-item label {
+        padding-bottom: 8px;
+      }
+
+      .chat-actions {
+        width: 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        padding: 0 18px 18px;
+      }
+
+      .chat-toggle {
+        width: 100%;
+        margin-left: 0;
+        justify-content: center;
+        grid-column: 1 / -1;
+      }
+
+      .chat-actions button {
+        width: 100%;
+        padding: 10px 12px;
+        white-space: normal;
       }
 
       .sql-actions {
