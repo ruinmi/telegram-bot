@@ -96,6 +96,15 @@ def init_db(conn):
         )
     '''
     )
+    conn.execute(
+        '''
+        CREATE TABLE IF NOT EXISTS og_cache(
+            url TEXT PRIMARY KEY,
+            value TEXT,
+            updated_at INTEGER NOT NULL DEFAULT 0
+        )
+    '''
+    )
 
     try:
         cols = {row[1] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
@@ -403,6 +412,47 @@ def _meta_set(conn, key: str, value):
     conn.execute(
         "INSERT OR REPLACE INTO meta(chat_id, key, value) VALUES(?, ?, ?)",
         (chat_scope, key, str(value)),
+    )
+    conn.commit()
+
+
+def get_me_id(conn: sqlite3.Connection | None = None) -> str:
+    owns_conn = conn is None
+    conn = conn or get_app_connection()
+    try:
+        row = conn.execute("SELECT value FROM meta WHERE chat_id='' AND key='me_id'").fetchone()
+        return str(row[0]).strip() if row and row[0] is not None else ""
+    finally:
+        if owns_conn:
+            conn.close()
+
+
+def set_me_id(conn: sqlite3.Connection, value: str) -> None:
+    conn.execute(
+        "INSERT OR REPLACE INTO meta(chat_id, key, value) VALUES('', 'me_id', ?)",
+        (str(value or '').strip(),),
+    )
+    conn.commit()
+
+
+def get_og_cache(conn: sqlite3.Connection, url: str) -> dict | None:
+    row = conn.execute("SELECT value FROM og_cache WHERE url=?", (str(url or '').strip(),)).fetchone()
+    if not row:
+        return None
+    raw = row[0]
+    if raw in (None, ""):
+        return {}
+    try:
+        return json.loads(raw)
+    except Exception:
+        return {}
+
+
+def set_og_cache(conn: sqlite3.Connection, url: str, value: dict | None) -> None:
+    payload = json.dumps(value or {}, ensure_ascii=False)
+    conn.execute(
+        "INSERT OR REPLACE INTO og_cache(url, value, updated_at) VALUES(?, ?, ?)",
+        (str(url or '').strip(), payload, int(time.time())),
     )
     conn.commit()
 

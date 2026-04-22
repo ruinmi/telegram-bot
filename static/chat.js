@@ -1303,9 +1303,97 @@ async function ensureSearchScrollable() {
 document.addEventListener('DOMContentLoaded', loadMessages);
 
 const confirmSearchBtn = document.getElementById('confirmSearch');
+const mobileSearchTrigger = document.getElementById('mobileSearchTrigger');
+const mobileSearchExpanded = document.getElementById('mobileSearchExpanded');
+const mobileSearchPanel = document.getElementById('mobileSearchPanel');
+const mobileControlsToggle = document.getElementById('mobileControlsToggle');
+const headerEl = document.getElementById('header');
+const mobileHeaderMediaQuery = window.matchMedia('(max-width: 768px)');
+
+let isMobileSearchVisible = false;
+let isMobileControlsOpen = false;
+
+function updateHeaderOffsets() {
+    if (!headerEl) return;
+    const headerBottom = Math.ceil(headerEl.getBoundingClientRect().bottom);
+    document.documentElement.style.setProperty('--chat-header-offset', `${headerBottom + 14}px`);
+    document.documentElement.style.setProperty('--chat-loader-offset', `${Math.max(56, headerBottom - 10)}px`);
+}
+
+function syncMobileHeaderState() {
+    if (!headerEl || !mobileSearchTrigger || !mobileSearchExpanded || !mobileSearchPanel) return;
+
+    if (!mobileHeaderMediaQuery.matches) {
+        headerEl.classList.remove('is-collapsed');
+        mobileSearchTrigger.classList.remove('is-hidden');
+        mobileSearchExpanded.classList.add('is-visible');
+        mobileSearchPanel.classList.add('is-open');
+        mobileSearchExpanded.setAttribute('aria-hidden', 'false');
+        mobileSearchPanel.setAttribute('aria-hidden', 'false');
+        mobileControlsToggle?.classList.add('is-open');
+        requestAnimationFrame(updateHeaderOffsets);
+        return;
+    }
+
+    headerEl.classList.toggle('is-collapsed', !isMobileSearchVisible);
+    mobileSearchTrigger.classList.toggle('is-hidden', isMobileSearchVisible);
+    mobileSearchExpanded.classList.toggle('is-visible', isMobileSearchVisible);
+    mobileSearchPanel.classList.toggle('is-open', isMobileSearchVisible && isMobileControlsOpen);
+    mobileControlsToggle?.classList.toggle('is-open', isMobileSearchVisible && isMobileControlsOpen);
+    mobileSearchExpanded.setAttribute('aria-hidden', String(!isMobileSearchVisible));
+    mobileSearchPanel.setAttribute('aria-hidden', String(!(isMobileSearchVisible && isMobileControlsOpen)));
+    requestAnimationFrame(updateHeaderOffsets);
+}
+
+function toggleMobileSearch(forceVisible = !isMobileSearchVisible) {
+    isMobileSearchVisible = !!forceVisible;
+    if (!isMobileSearchVisible) {
+        isMobileControlsOpen = false;
+    }
+    syncMobileHeaderState();
+    if (isMobileSearchVisible) {
+        document.getElementById('searchBox')?.focus();
+    }
+}
+
+function toggleMobileControls(forceOpen = !isMobileControlsOpen) {
+    if (!mobileHeaderMediaQuery.matches) return;
+    if (!isMobileSearchVisible) {
+        isMobileSearchVisible = true;
+    }
+    isMobileControlsOpen = !!forceOpen;
+    syncMobileHeaderState();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    syncMobileHeaderState();
+    mobileSearchTrigger?.addEventListener('click', () => toggleMobileSearch(true));
+    mobileControlsToggle?.addEventListener('click', () => toggleMobileControls());
+    window.addEventListener('resize', updateHeaderOffsets);
+    requestAnimationFrame(updateHeaderOffsets);
+});
+
+mobileHeaderMediaQuery.addEventListener('change', () => {
+    if (!mobileHeaderMediaQuery.matches) {
+        isMobileSearchVisible = false;
+        isMobileControlsOpen = false;
+    }
+    syncMobileHeaderState();
+});
+
+document.addEventListener('click', (event) => {
+    if (!mobileHeaderMediaQuery.matches || !isMobileSearchVisible || !headerEl) return;
+    if (!headerEl.contains(event.target)) {
+        toggleMobileSearch(false);
+    }
+});
+
 document.addEventListener('keydown', function (event) {
     if (event.key === 'Enter') {
         confirmSearchBtn.click();
+    }
+    if (event.key === 'Escape' && mobileHeaderMediaQuery.matches && isMobileSearchVisible) {
+        toggleMobileSearch(false);
     }
 });
 

@@ -1,6 +1,14 @@
 import sqlite3
+import sys
+
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from telegram_bot import db_utils, message_utils
+from scripts import migrate_legacy_storage_to_db
 
 
 def test_parse_messages_sets_sender_id_and_is_self(monkeypatch):
@@ -46,7 +54,7 @@ def test_init_app_db_creates_unified_tables(tmp_path, monkeypatch):
     finally:
         conn.close()
 
-    assert {"chats", "messages", "search_scopes", "search_scope_items", "meta"}.issubset(tables)
+    assert {"chats", "messages", "search_scopes", "search_scope_items", "meta", "og_cache"}.issubset(tables)
 
 
 def test_unified_chat_scope_and_global_search(tmp_path, monkeypatch):
@@ -135,3 +143,59 @@ def test_upsert_search_scope_rejects_missing_scope_id(tmp_path, monkeypatch):
         conn.close()
 
     assert raised is True
+
+
+def test_db_stores_me_id_and_open_graph_cache(tmp_path, monkeypatch):
+    app_db = tmp_path / "app.db"
+    monkeypatch.setattr(db_utils, "APP_DB_PATH", app_db)
+
+    conn = db_utils.get_app_connection(row_factory=sqlite3.Row)
+    try:
+        db_utils.set_me_id(conn, "42")
+        db_utils.set_og_cache(conn, "https://example.com", {"title": "Example"})
+        db_utils.set_og_cache(conn, "https://missing.example", {})
+
+        me_id = db_utils.get_me_id(conn)
+        og_hit = db_utils.get_og_cache(conn, "https://example.com")
+        og_miss = db_utils.get_og_cache(conn, "https://missing.example")
+    finally:
+        conn.close()
+
+    assert me_id == "42"
+    assert og_hit == {"title": "Example"}
+    assert og_miss == {}
+
+
+def test_migrate_legacy_storage_imports_files_into_db(tmp_path):
+    app_db = tmp_path / "app.db"
+    chats_file = tmp_path / "chats.json"
+    me_id_file = tmp_path / "me_id.txt"
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    og_data_file = data_dir / "og_data.json"
+
+    chats_file.write_text('[{"id": "chat-9", "remark": "旧频道"}]', encoding='utf-8')
+    me_id_file.write_text('777', encoding='utf-8')
+    og_data_file.write_text('{"https://example.com": {"title": "Legacy"}}', encoding='utf-8')
+
+    summary = migrate_legacy_storage_to_db.migrate_legacy_storage(
+        app_db_path=app_db,
+        chats_file=chats_file,
+        me_id_file=me_id_file,
+        og_data_file=og_data_file,
+    )
+
+    conn = db_utils.get_app_connection(row_factory=sqlite3.Row)
+    try:
+        chats = db_utils.list_chats_db(conn)
+        me_id = db_utils.get_me_id(conn)
+        og_info = db_utils.get_og_cache(conn, "https://example.com")
+    finally:
+        conn.close()
+
+    assert summary["migrated_chats"] == 1
+    assert summary["migrated_me_id"] is True
+    assert summary["migrated_og_entries"] == 1
+    assert chats[0]["id"] == "chat-9"
+    assert me_id == "777"
+    assert og_info == {"title": "Legacy"}

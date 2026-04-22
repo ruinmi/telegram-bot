@@ -8,7 +8,7 @@ import re
 
 from .xunlei_cipher import is_xunlei_link_stale
 from .http_client import post as http_post
-from .paths import ME_ID_FILE
+from .db_utils import get_me_id as _get_me_id_from_db
 
 def load_json(file_path: str) -> dict:
     """Load JSON data from a file."""
@@ -16,11 +16,9 @@ def load_json(file_path: str) -> dict:
         return json.load(infile)
 
 def load_me_id() -> str:
-    """Load the user's own Telegram ID from a file."""
+    """Load the user's own Telegram ID from the app database."""
     try:
-        with open(ME_ID_FILE, "r", encoding="utf-8") as infile:
-            me_id = infile.read().strip()
-            return me_id
+        return _get_me_id_from_db()
     except Exception:
         return ""
 
