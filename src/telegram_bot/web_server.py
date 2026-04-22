@@ -24,7 +24,7 @@ from telegram_bot.db_utils import get_connection, get_db_path
 from telegram_bot.message_utils import is_ali_link_stale, is_quark_link_stale
 from telegram_bot.paths import BASE_DIR, DOWNLOADS_DIR, STATIC_DIR, TEMPLATES_DIR, ensure_runtime_dirs
 from telegram_bot.project_logger import get_logger
-from telegram_bot.update_messages import _run_tdl_command, redownload_chat_files
+from telegram_bot.update_messages import TDL_DL_TIMEOUT_SECONDS, _run_tdl_command, redownload_chat_files
 from telegram_bot.xunlei_cipher import is_xunlei_link_stale
 
 ensure_runtime_dirs()
@@ -964,8 +964,6 @@ def download_telegram_media(payload: DownloadTelegramMediaRequest):
         [
             "-d",
             str(download_dir),
-            "--skip-same",
-            "--continue",
             "-t",
             "4",
             "-l",
@@ -973,7 +971,13 @@ def download_telegram_media(payload: DownloadTelegramMediaRequest):
         ]
     )
 
-    result = _run_tdl_command(cmd, dl_logger, label="tdl dl (by url)")
+    result = _run_tdl_command(cmd, dl_logger, label="tdl dl (by url)", timeout_seconds=TDL_DL_TIMEOUT_SECONDS)
+
+    if result.returncode == 124:
+        return JSONResponse(
+            status_code=504,
+            content={"ok": False, "error": "download timeout", "timeout_seconds": TDL_DL_TIMEOUT_SECONDS},
+        )
 
     if result.returncode != 0:
         return JSONResponse(

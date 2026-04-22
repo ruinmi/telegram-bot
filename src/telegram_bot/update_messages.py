@@ -1,5 +1,6 @@
 import os
 import subprocess
+import signal
 from .project_logger import get_logger
 import time
 import json
@@ -15,6 +16,9 @@ ensure_runtime_dirs()
 
 IMAGE_EXTENSIONS = "jpg,jpeg,png,webp,gif"
 
+TDL_CHAT_EXPORT_TIMEOUT_SECONDS = int(os.getenv("TDL_CHAT_EXPORT_TIMEOUT_SECONDS", "240"))
+TDL_DL_TIMEOUT_SECONDS = int(os.getenv("TDL_DL_TIMEOUT_SECONDS", "600"))
+
 # def _tail_lines(text: str | None, max_lines: int = 80) -> str:
 #     if not text:
 #         return ""
@@ -24,17 +28,59 @@ IMAGE_EXTENSIONS = "jpg,jpeg,png,webp,gif"
 #     return ("\n".join(lines[-max_lines:])).strip()
 
 
-def _run_tdl_command(command: list[str], logger, label: str):
+def _run_tdl_command(command: list[str], logger, label: str, *, timeout_seconds: int | None = None):
     logger.info(f"{label}: Running command: {' '.join(command)}")
+    timeout_seconds = int(timeout_seconds) if timeout_seconds is not None else None
     with tdl_lock:
         try:
-            result = subprocess.run(
-                command,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
+            popen_kwargs: dict[str, object] = {
+                "args": command,
+                "stdout": subprocess.PIPE,
+                "stderr": subprocess.PIPE,
+                "text": True,
+                "encoding": "utf-8",
+                "errors": "replace",
+            }
+            if os.name == "nt":
+                popen_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                popen_kwargs["start_new_session"] = True
+
+            proc = subprocess.Popen(**popen_kwargs)  # type: ignore[arg-type]
+            stdout, stderr = "", ""
+            try:
+                stdout, stderr = proc.communicate(timeout=timeout_seconds)
+            except subprocess.TimeoutExpired:
+                logger.error(f"{label}: tdl timeout after {timeout_seconds}s; terminating process.")
+                try:
+                    if os.name == "nt":
+                        proc.terminate()
+                    else:
+                        os.killpg(proc.pid, signal.SIGTERM)
+                except Exception:
+                    pass
+
+                try:
+                    proc.wait(timeout=10)
+                except Exception:
+                    try:
+                        if os.name == "nt":
+                            proc.kill()
+                        else:
+                            os.killpg(proc.pid, signal.SIGKILL)
+                    except Exception:
+                        pass
+
+                try:
+                    stdout2, stderr2 = proc.communicate(timeout=2)
+                except Exception:
+                    stdout2, stderr2 = "", ""
+
+                stdout = (stdout or "") + (stdout2 or "")
+                stderr = (stderr or "") + (stderr2 or "") + f"\n[TIMEOUT after {timeout_seconds}s]"
+                return subprocess.CompletedProcess(command, 124, stdout, stderr)
+
+            return subprocess.CompletedProcess(command, proc.returncode, stdout, stderr)
         except FileNotFoundError as e:
             logger.error(f"{label}: tdl not found: {e}")
             raise
@@ -76,7 +122,7 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
         command.append('--all')
 
 
-    result = _run_tdl_command(command, logger, label="tdl chat export")
+    result = _run_tdl_command(command, logger, label="tdl chat export", timeout_seconds=TDL_CHAT_EXPORT_TIMEOUT_SECONDS)
     
     if result.returncode == 0:
         logger.info("Chat export successful.")
@@ -103,7 +149,7 @@ def export_chat(their_id, msg_json_path, msg_json_temp_path, conn, is_download=T
             ]
             if download_images_only:
                 download_command.extend(['-i', IMAGE_EXTENSIONS])
-            download_result = _run_tdl_command(download_command, logger, label="tdl dl")
+            download_result = _run_tdl_command(download_command, logger, label="tdl dl", timeout_seconds=TDL_DL_TIMEOUT_SECONDS)
             if download_result.returncode != 0:
                 logger.error("Error downloading files (see tdl dl stdout/stderr above).")
             else:
@@ -157,7 +203,7 @@ def refresh_chat_reactions(their_id: str, msg_json_temp_path: str, conn, remark:
         "--all",
     ]
 
-    result = _run_tdl_command(command, logger, label="tdl chat export (refresh reactions)")
+    result = _run_tdl_command(command, logger, label="tdl chat export (refresh reactions)", timeout_seconds=TDL_CHAT_EXPORT_TIMEOUT_SECONDS)
     if result.returncode != 0:
         logger.error("Refresh reactions export failed (see stdout/stderr above).")
         return 0
@@ -231,7 +277,7 @@ def redownload_chat_files(their_id, download_images_only=False, remark=None):
         '--raw',
         '--all',
     ]
-    export_result = _run_tdl_command(export_command, logger, label="tdl chat export (redownload)")
+    export_result = _run_tdl_command(export_command, logger, label="tdl chat export (redownload)", timeout_seconds=TDL_CHAT_EXPORT_TIMEOUT_SECONDS)
     if export_result.returncode != 0:
         logger.error("Redownload export failed (see stdout/stderr above).")
         return False
@@ -245,8 +291,6 @@ def redownload_chat_files(their_id, download_images_only=False, remark=None):
         msg_json_temp_path,
         '-d',
         download_path,
-        '--skip-same',
-        '--continue',
         '-t',
         '8',
         '-l',
@@ -255,7 +299,7 @@ def redownload_chat_files(their_id, download_images_only=False, remark=None):
     if download_images_only:
         download_command.extend(['-i', IMAGE_EXTENSIONS])
 
-    download_result = _run_tdl_command(download_command, logger, label="tdl dl (redownload)")
+    download_result = _run_tdl_command(download_command, logger, label="tdl dl (redownload)", timeout_seconds=TDL_DL_TIMEOUT_SECONDS)
     try:
         if os.path.exists(msg_json_temp_path):
             os.remove(msg_json_temp_path)
