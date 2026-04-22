@@ -675,14 +675,14 @@ def _cleanup_stale_links_worker(
 
 @app.get("/")
 def index_page(request: Request):
-    return templates.TemplateResponse("index.html", {"request": request})
+    return templates.TemplateResponse(request, "index.html", {"request": request})
 
 
 @app.get("/chat/{chat_id}")
 def chat_page(chat_id: str, request: Request):
     chats = load_chats()
     chat_username = next((c.get('username') for c in chats if c.get('id') == chat_id), '')
-    return templates.TemplateResponse("template.html", {"request": request, "chat_id": chat_id, 'chat_username': chat_username})
+    return templates.TemplateResponse(request, "template.html", {"request": request, "chat_id": chat_id, 'chat_username': chat_username})
 
 
 @app.get("/sw.js")
